@@ -5,6 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     APP_NAME: str = "BookShop API"
+    APP_VERSION: str = "0.1.0"
+    APP_DESCRIPTION: str = "FastAPI book store API"
     DEBUG: bool = False
     DATABASE_URL: str
     SECRET_KEY: str
