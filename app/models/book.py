@@ -1,7 +1,7 @@
 from sqlalchemy import Column, DateTime, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import relationship
 
-from .authors import book_authors
+from .author import book_authors
 from .base import Base
 
 
