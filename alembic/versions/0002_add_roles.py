@@ -1,0 +1,61 @@
+"""Add roles and user role_id."""
+
+from alembic import op
+import sqlalchemy as sa
+
+revision = "0002_add_roles"
+down_revision = "0001_initial_tables"
+branch_labels = None
+depends_on = None
+
+
+def upgrade() -> None:
+    op.create_table(
+        "roles",
+        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("name", sa.String(length=50), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.UniqueConstraint("name", name="uq_roles_name"),
+    )
+    op.create_index("ix_roles_id", "roles", ["id"])
+    op.create_index("ix_roles_name", "roles", ["name"])
+
+    roles_table = sa.table(
+        "roles",
+        sa.column("id", sa.Integer()),
+        sa.column("name", sa.String()),
+    )
+    op.bulk_insert(
+        roles_table,
+        [
+            {"id": 1, "name": "user"},
+            {"id": 2, "name": "admin"},
+        ],
+    )
+
+    op.add_column("users", sa.Column("role_id", sa.Integer(), nullable=True))
+    op.create_index("ix_users_role_id", "users", ["role_id"])
+    op.create_foreign_key(
+        "fk_users_role_id_roles",
+        "users",
+        "roles",
+        ["role_id"],
+        ["id"],
+    )
+    op.execute("UPDATE users SET role_id = 1 WHERE role_id IS NULL")
+    op.alter_column("users", "role_id", existing_type=sa.Integer(), nullable=False)
+
+
+def downgrade() -> None:
+    op.drop_constraint("fk_users_role_id_roles", "users", type_="foreignkey")
+    op.drop_index("ix_users_role_id", table_name="users")
+    op.drop_column("users", "role_id")
+
+    op.drop_index("ix_roles_name", table_name="roles")
+    op.drop_index("ix_roles_id", table_name="roles")
+    op.drop_table("roles")
