@@ -9,6 +9,7 @@ venv/
 ENV/
 env/
 .env
+.env.example
 
 # Packaging
 build/

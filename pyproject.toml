@@ -1,0 +1,24 @@
+[project]
+name = "bookshop-api"
+version = "0.1.0"
+description = "FastAPI book store API"
+requires-python = ">=3.10"
+
+dependencies = [
+    "uvicorn[standard]",
+    "sqlalchemy[asyncio]",
+    "asyncpg",
+    "alembic",
+    "pydantic[email]",
+    "pydantic-settings",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "redis",
+    "celery",
+    "structlog",
+    "sentry-sdk[fastapi]",
+    "slowapi",
+    "httpx",
+    "pytest",
+    "pytest-asyncio",
+]
