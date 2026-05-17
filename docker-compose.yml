@@ -1,0 +1,15 @@
+services:
+  db:
+    image: postgres:16
+    container_name: bookshop-db
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-bookshop}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookshop}
+      POSTGRES_DB: ${POSTGRES_DB:-bookshop}
+    ports:
+      - "5432:5432"
+    volumes:
+      - bookshop_db:/var/lib/postgresql/data
+
+volumes:
+  bookshop_db:

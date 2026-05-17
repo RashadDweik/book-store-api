@@ -14,12 +14,36 @@ from app import models  # noqa: E402
 
 config = context.config
 
+DOTENV_PATH = os.path.join(BASE_DIR, ".env")
+
+
+def load_dotenv(path: str) -> None:
+    if not os.path.exists(path):
+        return
+
+    with open(path, "r") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            key, _, value = line.partition("=")
+            if not key or not _:
+                continue
+            if key not in os.environ:
+                os.environ[key] = value.strip().strip('"').strip("'")
+
+
+load_dotenv(DOTENV_PATH)
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 
 def get_database_url() -> str:
-    return os.getenv("DATABASE_URL", "sqlite:///./bookshop.db")
+    return os.getenv(
+        "DATABASE_URL",
+        "postgresql+psycopg://bookshop:bookshop@localhost:5432/bookshop",
+    )
 
 
 config.set_main_option("sqlalchemy.url", get_database_url())
