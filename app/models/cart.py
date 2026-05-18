@@ -1,31 +1,54 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, UniqueConstraint, func
-from sqlalchemy.orm import relationship
+import uuid
+from typing import TYPE_CHECKING
 
-from .base import Base
+from sqlalchemy import ForeignKey, Integer, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import BaseModel
+
+if TYPE_CHECKING:
+    from .book import Book
+    from .user import User
 
 
-class Cart(Base):
+class Cart(BaseModel):
     __tablename__ = "carts"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
 
-    user = relationship("User", back_populates="cart")
-    items = relationship("CartItem", back_populates="cart", cascade="all, delete-orphan")
+    user: Mapped["User"] = relationship("User", back_populates="cart")
+    items: Mapped[list["CartItem"]] = relationship(
+        "CartItem",
+        back_populates="cart",
+        cascade="all, delete-orphan",
+    )
 
 
-class CartItem(Base):
+class CartItem(BaseModel):
     __tablename__ = "cart_items"
     # Enforce one entry per (cart, book) pair.
     __table_args__ = (
         UniqueConstraint("cart_id", "book_id", name="uq_cart_items_cart_id_book_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    cart_id = Column(Integer, ForeignKey("carts.id"), nullable=False)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
-    quantity = Column(Integer, nullable=False, default=1)
+    cart_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("carts.id"),
+        nullable=False,
+    )
+    book_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("books.id"),
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
-    cart = relationship("Cart", back_populates="items")
-    book = relationship("Book", back_populates="cart_items")
+    cart: Mapped["Cart"] = relationship("Cart", back_populates="items")
+    book: Mapped["Book"] = relationship("Book", back_populates="cart_items")

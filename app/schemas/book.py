@@ -1,5 +1,6 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from .author import AuthorSummary
 from .base import SchemaBase
@@ -14,7 +15,7 @@ class BookBase(SchemaBase):
 
 
 class BookCreate(BookBase):
-    author_ids: list[int]
+    author_ids: list[UUID]
 
 
 class BookUpdate(SchemaBase):
@@ -23,10 +24,10 @@ class BookUpdate(SchemaBase):
     description: str | None = None
     isbn: str | None = None
     stock: int | None = None
-    author_ids: list[int] | None = None
+    author_ids: list[UUID] | None = None
 
 
 class BookRead(BookBase):
-    id: int
+    id: UUID
     created_at: datetime
     authors: list[AuthorSummary] = []

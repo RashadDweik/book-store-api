@@ -1,9 +1,10 @@
 from datetime import datetime
+from uuid import UUID
 
 from .base import SchemaBase
 
 
 class RoleRead(SchemaBase):
-    id: int
+    id: UUID
     name: str
     created_at: datetime

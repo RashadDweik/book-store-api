@@ -1,10 +1,11 @@
 from datetime import datetime
+from uuid import UUID
 
 from .base import SchemaBase
 
 
 class CartItemBase(SchemaBase):
-    book_id: int
+    book_id: UUID
     quantity: int = 1
 
 
@@ -17,11 +18,11 @@ class CartItemUpdate(SchemaBase):
 
 
 class CartItemRead(CartItemBase):
-    id: int
+    id: UUID
 
 
 class CartRead(SchemaBase):
-    id: int
-    user_id: int
+    id: UUID
+    user_id: UUID
     created_at: datetime
     items: list[CartItemRead] = []

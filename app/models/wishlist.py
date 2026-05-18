@@ -1,31 +1,53 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, UniqueConstraint, func
-from sqlalchemy.orm import relationship
+import uuid
+from typing import TYPE_CHECKING
 
-from .base import Base
+from sqlalchemy import ForeignKey, UniqueConstraint
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import BaseModel
+
+if TYPE_CHECKING:
+    from .book import Book
+    from .user import User
 
 
-class Wishlist(Base):
+class Wishlist(BaseModel):
     __tablename__ = "wishlists"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, unique=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
 
-    user = relationship("User", back_populates="wishlist")
-    items = relationship("WishlistItem", back_populates="wishlist", cascade="all, delete-orphan")
+    user: Mapped["User"] = relationship("User", back_populates="wishlist")
+    items: Mapped[list["WishlistItem"]] = relationship(
+        "WishlistItem",
+        back_populates="wishlist",
+        cascade="all, delete-orphan",
+    )
 
 
-class WishlistItem(Base):
+class WishlistItem(BaseModel):
     __tablename__ = "wishlist_items"
     # Enforce one entry per (wishlist, book) pair.
     __table_args__ = (
         UniqueConstraint("wishlist_id", "book_id", name="uq_wishlist_items_wishlist_id_book_id"),
     )
 
-    id = Column(Integer, primary_key=True, index=True)
-    wishlist_id = Column(Integer, ForeignKey("wishlists.id"), nullable=False)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    wishlist_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("wishlists.id"),
+        nullable=False,
+    )
+    book_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("books.id"),
+        nullable=False,
+    )
 
-    wishlist = relationship("Wishlist", back_populates="items")
-    book = relationship("Book", back_populates="wishlist_items")
+    wishlist: Mapped["Wishlist"] = relationship("Wishlist", back_populates="items")
+    book: Mapped["Book"] = relationship("Book", back_populates="wishlist_items")

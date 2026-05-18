@@ -1,31 +1,54 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, Numeric, String, func
-from sqlalchemy.orm import relationship
+from decimal import Decimal
+import uuid
+from typing import TYPE_CHECKING
 
-from .base import Base
+from sqlalchemy import ForeignKey, Integer, Numeric, String
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import BaseModel
+
+if TYPE_CHECKING:
+    from .book import Book
+    from .user import User
 
 
-class Order(Base):
+class Order(BaseModel):
     __tablename__ = "orders"
 
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    status = Column(String(32), nullable=False, default="pending")
-    total_amount = Column(Numeric(10, 2), nullable=False, default=0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    total_amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False, default=0)
 
-    user = relationship("User", back_populates="orders")
+    user: Mapped["User"] = relationship("User", back_populates="orders")
     # Delete order items when the parent order is removed.
-    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+    items: Mapped[list["OrderItem"]] = relationship(
+        "OrderItem",
+        back_populates="order",
+        cascade="all, delete-orphan",
+    )
 
 
-class OrderItem(Base):
+class OrderItem(BaseModel):
     __tablename__ = "order_items"
 
-    id = Column(Integer, primary_key=True, index=True)
-    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
-    book_id = Column(Integer, ForeignKey("books.id"), nullable=False)
-    quantity = Column(Integer, nullable=False, default=1)
-    unit_price = Column(Numeric(10, 2), nullable=False)
+    order_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("orders.id"),
+        nullable=False,
+    )
+    book_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("books.id"),
+        nullable=False,
+    )
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    unit_price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
 
-    order = relationship("Order", back_populates="items")
-    book = relationship("Book", back_populates="order_items")
+    order: Mapped["Order"] = relationship("Order", back_populates="items")
+    book: Mapped["Book"] = relationship("Book", back_populates="order_items")

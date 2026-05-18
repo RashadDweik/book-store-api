@@ -1,5 +1,5 @@
 from .author import Author
-from .base import Base
+from .base import Base, BaseModel, TimestampMixin
 from .book import Book
 from .cart import Cart, CartItem
 from .order import Order, OrderItem
@@ -11,12 +11,14 @@ from .wishlist import Wishlist, WishlistItem
 __all__ = [
 	"Author",
 	"Base",
+	"BaseModel",
 	"Book",
 	"Cart",
 	"CartItem",
 	"Order",
 	"OrderItem",
 	"Role",
+	"TimestampMixin",
 	"User",
 	"Wishlist",
 	"WishlistItem",

@@ -1,11 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
+from uuid import UUID
 
 from .base import SchemaBase
 
 
 class OrderItemCreate(SchemaBase):
-    book_id: int
+    book_id: UUID
     quantity: int = 1
 
 
@@ -14,15 +15,15 @@ class OrderCreate(SchemaBase):
 
 
 class OrderItemRead(SchemaBase):
-    id: int
-    book_id: int
+    id: UUID
+    book_id: UUID
     quantity: int
     unit_price: Decimal
 
 
 class OrderRead(SchemaBase):
-    id: int
-    user_id: int
+    id: UUID
+    user_id: UUID
     status: str
     total_amount: Decimal
     created_at: datetime

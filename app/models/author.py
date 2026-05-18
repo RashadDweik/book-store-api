@@ -1,24 +1,32 @@
-from sqlalchemy import Column, DateTime, ForeignKey, Integer, String, Table, func
-from sqlalchemy.orm import relationship
+from typing import TYPE_CHECKING
 
-from .base import Base
+from sqlalchemy import Column, ForeignKey, String, Table
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from .base import Base, BaseModel
+
+if TYPE_CHECKING:
+    from .book import Book
 
 
 # Association table for the many-to-many relationship between books and authors.
 book_authors = Table(
     "book_authors",
     Base.metadata,
-    Column("book_id", ForeignKey("books.id"), primary_key=True),
-    Column("author_id", ForeignKey("authors.id"), primary_key=True),
+    Column("book_id", UUID(as_uuid=True), ForeignKey("books.id"), primary_key=True),
+    Column("author_id", UUID(as_uuid=True), ForeignKey("authors.id"), primary_key=True),
 )
 
 
-class Author(Base):
+class Author(BaseModel):
     __tablename__ = "authors"
 
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(255), nullable=False, index=True)
-    bio = Column(String(1000), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    bio: Mapped[str | None] = mapped_column(String(1000), nullable=True)
 
-    books = relationship("Book", secondary=book_authors, back_populates="authors")
+    books: Mapped[list["Book"]] = relationship(
+        "Book",
+        secondary=book_authors,
+        back_populates="authors",
+    )

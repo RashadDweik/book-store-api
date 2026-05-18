@@ -1,4 +1,5 @@
 from datetime import datetime
+from uuid import UUID
 
 from .base import SchemaBase
 
@@ -18,10 +19,10 @@ class AuthorUpdate(SchemaBase):
 
 
 class AuthorSummary(SchemaBase):
-    id: int
+    id: UUID
     name: str
 
 
 class AuthorRead(AuthorBase):
-    id: int
+    id: UUID
     created_at: datetime

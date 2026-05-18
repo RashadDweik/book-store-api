@@ -2,6 +2,7 @@
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import UUID
 
 revision = "0001_initial_tables"
 down_revision = None
@@ -12,11 +13,17 @@ depends_on = None
 def upgrade() -> None:
     op.create_table(
         "authors",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("name", sa.String(length=255), nullable=False),
         sa.Column("bio", sa.String(length=1000), nullable=True),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -27,7 +34,7 @@ def upgrade() -> None:
 
     op.create_table(
         "books",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("title", sa.String(length=255), nullable=False),
         sa.Column("price", sa.Numeric(10, 2), nullable=False),
         sa.Column("description", sa.Text(), nullable=True),
@@ -35,6 +42,12 @@ def upgrade() -> None:
         sa.Column("stock", sa.Integer(), nullable=False, default=0),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -47,12 +60,18 @@ def upgrade() -> None:
 
     op.create_table(
         "users",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column("email", sa.String(length=255), nullable=False),
         sa.Column("hashed_password", sa.String(length=255), nullable=False),
         sa.Column("is_active", sa.Boolean(), nullable=False, default=True),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -64,10 +83,16 @@ def upgrade() -> None:
 
     op.create_table(
         "carts",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -78,10 +103,16 @@ def upgrade() -> None:
 
     op.create_table(
         "wishlists",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -92,12 +123,18 @@ def upgrade() -> None:
 
     op.create_table(
         "orders",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("user_id", sa.Integer(), sa.ForeignKey("users.id"), nullable=False),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("user_id", UUID(as_uuid=True), sa.ForeignKey("users.id"), nullable=False),
         sa.Column("status", sa.String(length=32), nullable=False, default="pending"),
         sa.Column("total_amount", sa.Numeric(10, 2), nullable=False, default=0),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -108,10 +145,10 @@ def upgrade() -> None:
 
     op.create_table(
         "book_authors",
-        sa.Column("book_id", sa.Integer(), sa.ForeignKey("books.id"), primary_key=True),
+        sa.Column("book_id", UUID(as_uuid=True), sa.ForeignKey("books.id"), primary_key=True),
         sa.Column(
             "author_id",
-            sa.Integer(),
+            UUID(as_uuid=True),
             sa.ForeignKey("authors.id"),
             primary_key=True,
         ),
@@ -119,10 +156,22 @@ def upgrade() -> None:
 
     op.create_table(
         "cart_items",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("cart_id", sa.Integer(), sa.ForeignKey("carts.id"), nullable=False),
-        sa.Column("book_id", sa.Integer(), sa.ForeignKey("books.id"), nullable=False),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("cart_id", UUID(as_uuid=True), sa.ForeignKey("carts.id"), nullable=False),
+        sa.Column("book_id", UUID(as_uuid=True), sa.ForeignKey("books.id"), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False, default=1),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.UniqueConstraint(
             "cart_id",
             "book_id",
@@ -133,16 +182,22 @@ def upgrade() -> None:
 
     op.create_table(
         "wishlist_items",
-        sa.Column("id", sa.Integer(), primary_key=True),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
         sa.Column(
             "wishlist_id",
-            sa.Integer(),
+            UUID(as_uuid=True),
             sa.ForeignKey("wishlists.id"),
             nullable=False,
         ),
-        sa.Column("book_id", sa.Integer(), sa.ForeignKey("books.id"), nullable=False),
+        sa.Column("book_id", UUID(as_uuid=True), sa.ForeignKey("books.id"), nullable=False),
         sa.Column(
             "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
             sa.DateTime(timezone=True),
             server_default=sa.func.now(),
             nullable=False,
@@ -157,11 +212,23 @@ def upgrade() -> None:
 
     op.create_table(
         "order_items",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("order_id", sa.Integer(), sa.ForeignKey("orders.id"), nullable=False),
-        sa.Column("book_id", sa.Integer(), sa.ForeignKey("books.id"), nullable=False),
+        sa.Column("id", UUID(as_uuid=True), primary_key=True),
+        sa.Column("order_id", UUID(as_uuid=True), sa.ForeignKey("orders.id"), nullable=False),
+        sa.Column("book_id", UUID(as_uuid=True), sa.ForeignKey("books.id"), nullable=False),
         sa.Column("quantity", sa.Integer(), nullable=False, default=1),
         sa.Column("unit_price", sa.Numeric(10, 2), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
     )
     op.create_index("ix_order_items_id", "order_items", ["id"])
 
