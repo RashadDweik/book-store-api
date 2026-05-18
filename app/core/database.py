@@ -1,0 +1,40 @@
+"""Async SQLAlchemy database setup and session dependency."""
+
+from collections.abc import AsyncGenerator
+
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import DeclarativeBase
+
+from app.core.config import get_settings
+
+
+settings = get_settings()
+
+engine = create_async_engine(
+    settings.DATABASE_URL,
+    echo=settings.DEBUG,
+    pool_pre_ping=True,
+)
+
+AsyncSessionFactory = async_sessionmaker(
+    engine,
+    expire_on_commit=False,
+    class_=AsyncSession,
+)
+
+
+class Base(DeclarativeBase):
+    """Declarative base for async SQLAlchemy models."""
+
+
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Yield a session and handle commit/rollback/close for FastAPI."""
+    session = AsyncSessionFactory()
+    try:
+        yield session
+        await session.commit()
+    except Exception:
+        await session.rollback()
+        raise
+    finally:
+        await session.close()

@@ -1,11 +1,13 @@
 """Alembic environment configuration for migrations."""
 
+import asyncio
 import os
 import sys
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import engine_from_config, pool
+from sqlalchemy import pool
+from sqlalchemy.ext.asyncio import create_async_engine
 
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -74,14 +76,11 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
-    """Run migrations in online mode using a live DB connection."""
-    connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    """Run migrations in online mode using a live async DB connection."""
+    url = config.get_main_option("sqlalchemy.url")
+    connectable = create_async_engine(url, poolclass=pool.NullPool)
 
-    with connectable.connect() as connection:
+    def do_run_migrations(connection) -> None:
         context.configure(
             connection=connection,
             target_metadata=target_metadata,
@@ -90,6 +89,13 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
+
+    async def run_async_migrations() -> None:
+        async with connectable.connect() as connection:
+            await connection.run_sync(do_run_migrations)
+        await connectable.dispose()
+
+    asyncio.run(run_async_migrations())
 
 
 if context.is_offline_mode():
