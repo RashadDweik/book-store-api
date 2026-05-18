@@ -1,3 +1,5 @@
+"""Alembic environment configuration for migrations."""
+
 import os
 import sys
 from logging.config import fileConfig
@@ -7,6 +9,7 @@ from sqlalchemy import engine_from_config, pool
 
 
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# Ensure the app package is importable when Alembic runs from alembic/.
 if BASE_DIR not in sys.path:
     sys.path.append(BASE_DIR)
 
@@ -18,6 +21,7 @@ DOTENV_PATH = os.path.join(BASE_DIR, ".env")
 
 
 def load_dotenv(path: str) -> None:
+    """Populate os.environ from a .env file without overwriting existing values."""
     if not os.path.exists(path):
         return
 
@@ -33,6 +37,7 @@ def load_dotenv(path: str) -> None:
                 os.environ[key] = value.strip().strip('"').strip("'")
 
 
+# Load environment variables for migrations (only if not already set).
 load_dotenv(DOTENV_PATH)
 
 if config.config_file_name is not None:
@@ -40,6 +45,7 @@ if config.config_file_name is not None:
 
 
 def get_database_url() -> str:
+    """Return database URL for Alembic, falling back to a local default."""
     return os.getenv(
         "DATABASE_URL",
         "postgresql+psycopg://bookshop:bookshop@localhost:5432/bookshop",
@@ -48,10 +54,12 @@ def get_database_url() -> str:
 
 config.set_main_option("sqlalchemy.url", get_database_url())
 
+# Use model metadata so autogenerate can detect schema changes.
 target_metadata = models.Base.metadata
 
 
 def run_migrations_offline() -> None:
+    """Run migrations in offline mode without a live DB connection."""
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
         url=url,
@@ -66,6 +74,7 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    """Run migrations in online mode using a live DB connection."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section),
         prefix="sqlalchemy.",

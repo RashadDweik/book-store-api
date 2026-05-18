@@ -6,6 +6,7 @@ from .role import RoleRead
 from .user import UserCreate, UserRead, UserUpdate
 from .wishlist import WishlistItemCreate, WishlistItemRead, WishlistRead
 
+# Re-export schemas for convenient imports.
 __all__ = [
     "AuthorBase",
     "AuthorCreate",

@@ -17,6 +17,7 @@ class Wishlist(Base):
 
 class WishlistItem(Base):
     __tablename__ = "wishlist_items"
+    # Enforce one entry per (wishlist, book) pair.
     __table_args__ = (
         UniqueConstraint("wishlist_id", "book_id", name="uq_wishlist_items_wishlist_id_book_id"),
     )

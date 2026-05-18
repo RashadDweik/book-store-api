@@ -1,3 +1,5 @@
+"""FastAPI application factory and middleware setup."""
+
 import logging
 import time
 from contextlib import asynccontextmanager
@@ -15,6 +17,7 @@ from starlette.responses import Response
 from app.core.config import Settings, get_settings
 
 
+# Configure structured logging once at import time.
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 structlog.configure(
     processors=[
@@ -32,6 +35,8 @@ logger = structlog.get_logger()
 
 
 class RequestTimingMiddleware(BaseHTTPMiddleware):
+    """Log request duration with method, path, and status code."""
+
     async def dispatch(
         self,
         request: Request,
@@ -51,12 +56,16 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
 
 def create_app() -> FastAPI:
+    """Create and configure the FastAPI application instance."""
     settings: Settings = get_settings()
+    # Rate-limit requests by client IP.
     limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
 
+    # Enable Sentry error reporting when configured.
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN)
 
+    # Log startup and shutdown events for service visibility.
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         logger.info("app.startup", service=settings.APP_NAME)
@@ -70,6 +79,7 @@ def create_app() -> FastAPI:
         debug=settings.DEBUG,
         lifespan=lifespan,
     )
+    # Store shared objects on app.state for later use.
     app.state.settings = settings
     app.state.limiter = limiter
 

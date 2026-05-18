@@ -25,11 +25,13 @@ def upgrade() -> None:
     op.create_index("ix_roles_id", "roles", ["id"])
     op.create_index("ix_roles_name", "roles", ["name"])
 
+    # Use a lightweight table definition for bulk insert without ORM models.
     roles_table = sa.table(
         "roles",
         sa.column("id", sa.Integer()),
         sa.column("name", sa.String()),
     )
+    # Seed default roles so existing users can be assigned.
     op.bulk_insert(
         roles_table,
         [
@@ -47,6 +49,7 @@ def upgrade() -> None:
         ["role_id"],
         ["id"],
     )
+    # Backfill existing users before enforcing non-null role_id.
     op.execute("UPDATE users SET role_id = 1 WHERE role_id IS NULL")
     op.alter_column("users", "role_id", existing_type=sa.Integer(), nullable=False)
 

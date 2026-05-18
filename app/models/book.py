@@ -16,6 +16,7 @@ class Book(Base):
     stock = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
+    # Authors is many-to-many; dependent items are deleted with the book.
     authors = relationship("Author", secondary=book_authors, back_populates="books")
     cart_items = relationship("CartItem", back_populates="book", cascade="all, delete-orphan")
     wishlist_items = relationship("WishlistItem", back_populates="book", cascade="all, delete-orphan")

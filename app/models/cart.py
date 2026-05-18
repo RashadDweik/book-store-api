@@ -17,6 +17,7 @@ class Cart(Base):
 
 class CartItem(Base):
     __tablename__ = "cart_items"
+    # Enforce one entry per (cart, book) pair.
     __table_args__ = (
         UniqueConstraint("cart_id", "book_id", name="uq_cart_items_cart_id_book_id"),
     )

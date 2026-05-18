@@ -14,6 +14,7 @@ class Order(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     user = relationship("User", back_populates="orders")
+    # Delete order items when the parent order is removed.
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
 

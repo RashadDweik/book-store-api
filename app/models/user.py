@@ -15,6 +15,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     role = relationship("Role", back_populates="users")
+    # uselist=False makes these one-to-one relationships.
     cart = relationship("Cart", back_populates="user", uselist=False, cascade="all, delete-orphan")
     wishlist = relationship("Wishlist", back_populates="user", uselist=False, cascade="all, delete-orphan")
     orders = relationship("Order", back_populates="user")
