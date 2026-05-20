@@ -8,13 +8,13 @@ import sentry_sdk
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from slowapi import Limiter
 from slowapi.middleware import SlowAPIMiddleware
-from slowapi.util import get_remote_address
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
+from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
+from app.core.limiter import limiter
 
 
 # Configure structured logging once at import time.
@@ -58,9 +58,6 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application instance."""
     settings: Settings = get_settings()
-    # Rate-limit requests by client IP.
-    limiter = Limiter(key_func=get_remote_address, default_limits=["100/minute"])
-
     # Enable Sentry error reporting when configured.
     if settings.SENTRY_DSN:
         sentry_sdk.init(dsn=settings.SENTRY_DSN)
@@ -96,6 +93,8 @@ def create_app() -> FastAPI:
     @app.get("/health", tags=["health"])
     async def health() -> dict:
         return {"status": "ok", "service": settings.APP_NAME}
+
+    app.include_router(api_router, prefix="/api/v1")
 
     return app
 
