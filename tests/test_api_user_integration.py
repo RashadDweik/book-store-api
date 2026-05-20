@@ -1,0 +1,478 @@
+import os
+from datetime import datetime, timezone
+from types import SimpleNamespace
+from uuid import uuid4
+
+import httpx
+import pytest
+from fastapi import FastAPI, HTTPException, status
+
+os.environ.setdefault(
+    "DATABASE_URL",
+    "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db",
+)
+os.environ.setdefault("SECRET_KEY", "test-secret")
+
+from app.api.v1.routers import auth as auth_router
+from app.api.v1.routers import users as users_router
+from app.core.dependencies import get_current_user
+from app.core.limiter import limiter
+from app.main import create_app
+from app.services.user_service import UserService
+
+
+pytestmark = pytest.mark.anyio
+
+
+class StubUserService:
+    def __init__(
+        self,
+        user: SimpleNamespace,
+        updated_user: SimpleNamespace | None = None,
+        register_error: Exception | None = None,
+        authenticate_error: Exception | None = None,
+        update_error: Exception | None = None,
+    ) -> None:
+        self._user = user
+        self._updated_user = updated_user or user
+        self._register_error = register_error
+        self._authenticate_error = authenticate_error
+        self._update_error = update_error
+
+    async def register(self, data) -> SimpleNamespace:
+        if self._register_error:
+            raise self._register_error
+        return self._user
+
+    async def authenticate(self, email: str, password: str) -> SimpleNamespace:
+        if self._authenticate_error:
+            raise self._authenticate_error
+        return self._user
+
+    async def update_profile(self, user_id, data) -> SimpleNamespace:
+        if self._update_error:
+            raise self._update_error
+        return self._updated_user
+
+
+def build_user(**overrides) -> SimpleNamespace:
+    payload = {
+        "id": uuid4(),
+        "email": "user@example.com",
+        "full_name": "Test User",
+        "is_active": True,
+        "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
+        "role": None,
+    }
+    payload.update(overrides)
+    return SimpleNamespace(**payload)
+
+
+def reset_limiter_state() -> None:
+    storage = limiter._storage
+    reset = getattr(storage, "reset", None)
+    if callable(reset):
+        reset()
+        return
+    clear = getattr(storage, "clear", None)
+    if callable(clear):
+        clear()
+
+
+@pytest.fixture
+def app() -> FastAPI:
+    reset_limiter_state()
+    app = create_app()
+    yield app
+    app.dependency_overrides.clear()
+
+
+def override_services(
+    app: FastAPI,
+    auth_service: UserService | None = None,
+    users_service: UserService | None = None,
+    current_user: SimpleNamespace | None = None,
+) -> None:
+    if auth_service is not None:
+        app.dependency_overrides[auth_router.get_user_service] = lambda: auth_service
+    if users_service is not None:
+        app.dependency_overrides[users_router.get_user_service] = lambda: users_service
+    if current_user is not None:
+        app.dependency_overrides[get_current_user] = lambda: current_user
+
+
+# Register returns a valid user payload.
+async def test_register_returns_user(app: FastAPI) -> None:
+    # Arrange: override the service to return a known user.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: submit registration payload.
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "user@example.com",
+                "full_name": "Test User",
+                "password": "Password1",
+            },
+        )
+
+    # Assert: response payload matches the created user.
+    assert response.status_code == 201
+    body = response.json()
+    assert body["email"] == user.email
+    assert body["full_name"] == user.full_name
+    assert body["is_active"] is True
+    assert body["is_admin"] is False
+    assert "created_at" in body
+
+
+# Login issues access and refresh tokens.
+async def test_login_returns_tokens(app: FastAPI) -> None:
+    # Arrange: override the service to return a known user.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: submit login credentials.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+
+    # Assert: tokens are issued.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["token_type"] == "bearer"
+    assert body["access_token"]
+    assert body["refresh_token"]
+
+
+# Refresh issues a new access token from a refresh token.
+async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
+    # Arrange: login to obtain a refresh token.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: login and then refresh.
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        refresh_token = login_response.json()["refresh_token"]
+
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: access token is re-issued and refresh token is preserved.
+    assert refresh_response.status_code == 200
+    body = refresh_response.json()
+    assert body["access_token"]
+    assert body["refresh_token"] == refresh_token
+
+
+# /me returns the current user profile.
+async def test_me_returns_current_user(app: FastAPI) -> None:
+    # Arrange: override the current user and authenticate to get a token.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service, current_user=user)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: login, then fetch /me with the token.
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        access_token = login_response.json()["access_token"]
+
+        response = await client.get(
+            "/api/v1/users/me",
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    # Assert: profile matches current user.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["email"] == user.email
+    assert body["full_name"] == user.full_name
+
+
+# /me PATCH updates the current user's profile.
+async def test_update_me_updates_profile(app: FastAPI) -> None:
+    # Arrange: override services and current user.
+    user = build_user()
+    updated_user = build_user(id=user.id, email=user.email, full_name="New Name")
+    auth_service = StubUserService(user)
+    users_service = StubUserService(user, updated_user=updated_user)
+    override_services(app, auth_service=auth_service, users_service=users_service, current_user=user)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: login, then patch /me.
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        access_token = login_response.json()["access_token"]
+
+        response = await client.patch(
+            "/api/v1/users/me",
+            json={"full_name": "New Name"},
+            headers={"Authorization": f"Bearer {access_token}"},
+        )
+
+    # Assert: profile update is reflected in response.
+    assert response.status_code == 200
+    body = response.json()
+    assert body["full_name"] == "New Name"
+
+
+# Login enforces rate limiting after the allowed threshold.
+async def test_login_rate_limited(app: FastAPI) -> None:
+    # Arrange: override the service and submit multiple logins.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: exceed the rate limit.
+        responses = []
+        for _ in range(6):
+            responses.append(
+                await client.post(
+                    "/api/v1/auth/login",
+                    data={"username": "user@example.com", "password": "Password1"},
+                )
+            )
+
+    # Assert: last request is rate limited.
+    assert responses[-1].status_code == 429
+
+
+# Duplicate registration is rejected with 400.
+async def test_register_rejects_duplicate_email(app: FastAPI) -> None:
+    # Arrange: service raises a duplicate email error.
+    user = build_user()
+    service = StubUserService(
+        user,
+        register_error=HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email already registered.",
+        ),
+    )
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to register with a duplicate email.
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "user@example.com",
+                "full_name": "Test User",
+                "password": "Password1",
+            },
+        )
+
+    # Assert: duplicate registration is rejected.
+    assert response.status_code == status.HTTP_400_BAD_REQUEST
+
+
+# Invalid registration payload is rejected with validation errors.
+async def test_register_rejects_invalid_payload(app: FastAPI) -> None:
+    # Arrange: invalid email and weak password fail validation.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: submit invalid payload.
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={
+                "email": "not-an-email",
+                "full_name": "A",
+                "password": "weak",
+            },
+        )
+
+    # Assert: request is rejected by validation.
+    assert response.status_code == 422
+
+
+# Login rejects missing required fields.
+async def test_login_rejects_missing_fields(app: FastAPI) -> None:
+    # Arrange: submit login without required fields.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: omit password.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com"},
+        )
+
+    # Assert: request is rejected by validation.
+    assert response.status_code == 422
+
+
+# Login rejects invalid credentials with 401.
+async def test_login_rejects_invalid_credentials(app: FastAPI) -> None:
+    # Arrange: service raises an invalid credential error.
+    user = build_user()
+    service = StubUserService(
+        user,
+        authenticate_error=HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid email or password.",
+            headers={"WWW-Authenticate": "Bearer"},
+        ),
+    )
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to login with invalid credentials.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "wrong"},
+        )
+
+    # Assert: invalid credentials return 401.
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Login rejects inactive users with 403.
+async def test_login_rejects_inactive_user(app: FastAPI) -> None:
+    # Arrange: service raises an inactive user error.
+    user = build_user()
+    service = StubUserService(
+        user,
+        authenticate_error=HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="User is inactive.",
+        ),
+    )
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to login with an inactive user.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+
+    # Assert: inactive users are rejected.
+    assert response.status_code == status.HTTP_403_FORBIDDEN
+
+
+# Refresh rejects malformed tokens with 401.
+async def test_refresh_rejects_invalid_token(app: FastAPI) -> None:
+    # Arrange: submit a malformed refresh token.
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: refresh with an invalid token.
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "not-a-token"},
+        )
+
+    # Assert: invalid token is rejected.
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Refresh rejects tokens missing subject claims.
+async def test_refresh_rejects_missing_subject(
+    app: FastAPI, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: force decode_token to return a payload without subject.
+    monkeypatch.setattr(auth_router, "decode_token", lambda token: {})
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: refresh with a token missing subject.
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": "ignored"},
+        )
+
+    # Assert: missing subject is rejected.
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# /me rejects unauthenticated requests.
+async def test_me_rejects_unauthorized(app: FastAPI) -> None:
+    # Arrange: override current user dependency to raise 401.
+    async def _raise_unauthorized() -> None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated.",
+        )
+
+    app.dependency_overrides[get_current_user] = _raise_unauthorized
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: call /me without an authenticated user.
+        response = await client.get("/api/v1/users/me")
+
+    # Assert: unauthorized access is rejected.
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# /me PATCH rejects invalid update payloads.
+async def test_update_me_rejects_invalid_payload(app: FastAPI) -> None:
+    # Arrange: override current user and send invalid update data.
+    user = build_user()
+    override_services(app, current_user=user)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: submit invalid update payload.
+        response = await client.patch(
+            "/api/v1/users/me",
+            json={"full_name": "A", "email": "not-an-email"},
+        )
+
+    # Assert: validation rejects invalid updates.
+    assert response.status_code == 422
