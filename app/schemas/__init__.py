@@ -3,7 +3,7 @@ from .book import BookBase, BookCreate, BookRead, BookUpdate
 from .cart import CartItemCreate, CartItemRead, CartItemUpdate, CartRead
 from .order import OrderCreate, OrderItemCreate, OrderItemRead, OrderRead
 from .role import RoleRead
-from .user import UserCreate, UserRead, UserUpdate
+from .user import UserCreate, UserResponse, UserUpdate
 from .wishlist import WishlistItemCreate, WishlistItemRead, WishlistRead
 
 # Re-export schemas for convenient imports.
@@ -27,7 +27,7 @@ __all__ = [
     "OrderRead",
     "RoleRead",
     "UserCreate",
-    "UserRead",
+    "UserResponse",
     "UserUpdate",
     "WishlistItemCreate",
     "WishlistItemRead",
