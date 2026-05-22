@@ -4,6 +4,7 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.user import User
 
@@ -15,12 +16,16 @@ class UserRepository:
 
     async def get_by_id(self, user_id: UUID) -> User | None:
         # Retrieve a user by UUID, returning None when missing.
-        result = await self._db.execute(select(User).where(User.id == user_id))
+        result = await self._db.execute(
+            select(User).options(selectinload(User.role)).where(User.id == user_id)
+        )
         return result.scalar_one_or_none()
 
     async def get_by_email(self, email: str) -> User | None:
         # Retrieve a user by email, returning None when missing.
-        result = await self._db.execute(select(User).where(User.email == email))
+        result = await self._db.execute(
+            select(User).options(selectinload(User.role)).where(User.email == email)
+        )
         return result.scalar_one_or_none()
 
     async def create(self, user_data: dict) -> User:

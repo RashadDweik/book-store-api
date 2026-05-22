@@ -15,6 +15,10 @@ class UserBase(BaseModel):
 class UserCreate(UserBase):
     # Payload for creating a user with password validation rules.
     password: str = Field(min_length=8)
+    role_id: UUID | None = Field(
+        default=None,
+        description="Defaults to the 'user' role when omitted.",
+    )
 
     @field_validator("password")
     @classmethod
