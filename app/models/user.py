@@ -18,6 +18,7 @@ class User(BaseModel):
     __tablename__ = "users"
 
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(255), nullable=False)
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     role_id: Mapped[uuid.UUID] = mapped_column(
