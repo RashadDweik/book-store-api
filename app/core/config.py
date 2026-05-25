@@ -2,6 +2,9 @@
 
 from functools import lru_cache
 
+from urllib.parse import urlsplit, urlunsplit
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,6 +21,7 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REDIS_URL: str = "redis://localhost:6379"
     REFRESH_TOKEN_REDIS_URL: str = "redis://localhost:6381"
+    REDIS_REFRESH_PASSWORD: str | None = None
     RATE_LIMIT_STORAGE_URI: str = "redis://localhost:6380"
     SENTRY_DSN: str = ""
     ALLOWED_ORIGINS: list[str] = ["*"]
@@ -28,6 +32,21 @@ class Settings(BaseSettings):
         case_sensitive=True,
         extra="ignore",
     )
+
+    @model_validator(mode="after")
+    def _apply_refresh_redis_password(self) -> "Settings":
+        if not self.REDIS_REFRESH_PASSWORD:
+            return self
+        if "REFRESH_TOKEN_REDIS_URL" in self.model_fields_set:
+            return self
+
+        parts = urlsplit(self.REFRESH_TOKEN_REDIS_URL)
+        host = parts.hostname or "localhost"
+        port = f":{parts.port}" if parts.port else ""
+        path = parts.path or "/0"
+        netloc = f":{self.REDIS_REFRESH_PASSWORD}@{host}{port}"
+        self.REFRESH_TOKEN_REDIS_URL = urlunsplit((parts.scheme or "redis", netloc, path, "", ""))
+        return self
 
 
 @lru_cache
