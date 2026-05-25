@@ -50,7 +50,7 @@ async def refresh_access_token(payload: RefreshRequest) -> TokenResponse:
     # Validate refresh token and issue a new access token.
     token_payload = decode_token(payload.refresh_token)
     subject = token_payload.get("sub")
-    if not subject:
+    if not subject or token_payload.get("type") != "refresh":
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Token is invalid or expired.",

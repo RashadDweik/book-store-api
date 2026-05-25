@@ -187,6 +187,33 @@ async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
     assert body["refresh_token"] == refresh_token
 
 
+# Refresh must reject access tokens.
+async def test_refresh_rejects_access_token(app: FastAPI) -> None:
+    # Arrange: login to obtain an access token.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        access_token = login_response.json()["access_token"]
+
+        # Act: attempt to refresh using an access token.
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": access_token},
+        )
+
+    # Assert: access tokens are not accepted at the refresh endpoint.
+    assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
 # /me returns the current user profile.
 async def test_me_returns_current_user(app: FastAPI) -> None:
     # Arrange: override the current user and authenticate to get a token.
