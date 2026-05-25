@@ -30,6 +30,7 @@ def test_create_access_token_contains_subject() -> None:
     payload = security.decode_token(token)
 
     assert payload["sub"] == "user-uuid"
+    assert payload["type"] == "access"
     assert "exp" in payload
 
 
@@ -39,6 +40,7 @@ def test_create_access_token_custom_expiry() -> None:
     payload = security.decode_token(token)
 
     assert payload["sub"] == "user-uuid"
+    assert payload["type"] == "access"
     assert "exp" in payload
 
 
@@ -48,6 +50,7 @@ def test_create_refresh_token_contains_subject() -> None:
     payload = security.decode_token(token)
 
     assert payload["sub"] == "user-uuid"
+    assert payload["type"] == "refresh"
     assert "exp" in payload
 
 

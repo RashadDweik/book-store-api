@@ -29,14 +29,14 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
         expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
     expire_at = datetime.now(timezone.utc) + expires_delta
-    payload = {"sub": subject, "exp": expire_at}
+    payload = {"sub": subject, "type": "access", "exp": expire_at}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
 def create_refresh_token(subject: str) -> str:
     # Build a longer-lived JWT refresh token for the subject.
     expire_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    payload = {"sub": subject, "exp": expire_at}
+    payload = {"sub": subject, "type": "refresh", "exp": expire_at}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
