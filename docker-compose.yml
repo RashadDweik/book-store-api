@@ -12,7 +12,7 @@ services:
       - .env
     environment:
       RATE_LIMIT_STORAGE_URI: redis://redis-rate-limiter:6379
-      REFRESH_TOKEN_REDIS_URL: redis://redis-refresh:6379
+      REFRESH_TOKEN_REDIS_URL: redis://:${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}@redis-refresh:6379/0
     depends_on:
       - db
       - redis
@@ -62,10 +62,10 @@ services:
 
   redis-refresh:
     image: redis:7-alpine
-    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--requirepass", "${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}"]
     restart: unless-stopped
     ports:
-      - "6381:6379"
+      - "127.0.0.1:6381:6379"
     volumes:
       - redis_refresh_data:/data
     healthcheck:
