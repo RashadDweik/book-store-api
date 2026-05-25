@@ -8,6 +8,8 @@ import sentry_sdk
 import structlog
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi.errors import RateLimitExceeded
+from slowapi.extension import _rate_limit_exceeded_handler
 from slowapi.middleware import SlowAPIMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
@@ -81,6 +83,7 @@ def create_app() -> FastAPI:
     app.state.limiter = limiter
 
     app.add_middleware(SlowAPIMiddleware)
+    app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(RequestTimingMiddleware)
     app.add_middleware(
         CORSMiddleware,
