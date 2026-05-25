@@ -3,6 +3,7 @@
 from uuid import UUID
 
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 from app.core.security import hash_password, verify_password
 from app.models.user import User
@@ -16,6 +17,26 @@ class UserService:
         # Store repositories used for persistence and lookups.
         self._repo = repo
         self._roles = roles
+
+    @staticmethod
+    def _is_email_unique_violation(error: IntegrityError) -> bool:
+        """Return True when IntegrityError is due to users.email uniqueness."""
+        constraint_name = getattr(getattr(error, "orig", None), "constraint_name", None)
+        if constraint_name == "uq_users_email":
+            return True
+
+        diag = getattr(getattr(error, "orig", None), "diag", None)
+        if diag is not None and getattr(diag, "constraint_name", None) == "uq_users_email":
+            return True
+
+        message = str(getattr(error, "orig", error)).lower()
+        if "uq_users_email" in message:
+            return True
+        if "users.email" in message and "unique" in message:
+            return True
+        if "key (email)" in message and "already exists" in message:
+            return True
+        return False
 
     async def register(self, data: UserCreate) -> User:
         # Register a new user after enforcing unique email and hashing password.
@@ -38,7 +59,15 @@ class UserService:
         payload["hashed_password"] = hash_password(password)
         # Force all self-registrations to use the default 'user' role.
         payload["role_id"] = user_role_id
-        created = await self._repo.create(payload)
+        try:
+            created = await self._repo.create(payload)
+        except IntegrityError as exc:
+            if self._is_email_unique_violation(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered.",
+                ) from exc
+            raise
         reloaded = await self._repo.get_by_id(created.id)
         return reloaded or created
 
@@ -84,7 +113,15 @@ class UserService:
         if not update_data:
             return user
 
-        updated = await self._repo.update(user, update_data)
+        try:
+            updated = await self._repo.update(user, update_data)
+        except IntegrityError as exc:
+            if self._is_email_unique_violation(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Email already registered.",
+                ) from exc
+            raise
         reloaded = await self._repo.get_by_id(updated.id)
         return reloaded or updated
 
