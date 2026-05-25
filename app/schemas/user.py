@@ -63,3 +63,8 @@ class TokenResponse(BaseModel):
 class RefreshRequest(BaseModel):
     # Payload for requesting a refreshed access token.
     refresh_token: str
+
+
+class LogoutRequest(BaseModel):
+    # Payload for revoking a refresh token during logout.
+    refresh_token: str
