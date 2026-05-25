@@ -51,6 +51,20 @@ class StubUserService:
         return self._updated_user
 
 
+class InMemoryRefreshTokenStore:
+    def __init__(self) -> None:
+        self._tokens: dict[str, str] = {}
+
+    async def store(self, token: str, subject: str, expires_in) -> None:
+        self._tokens[token] = subject
+
+    async def get_subject(self, token: str) -> str | None:
+        return self._tokens.get(token)
+
+    async def revoke(self, token: str) -> None:
+        self._tokens.pop(token, None)
+
+
 def build_user(**overrides) -> SimpleNamespace:
     payload = {
         "id": uuid4(),
@@ -76,9 +90,15 @@ def reset_limiter_state() -> None:
 
 
 @pytest.fixture
-def app() -> FastAPI:
+def refresh_token_store() -> InMemoryRefreshTokenStore:
+    return InMemoryRefreshTokenStore()
+
+
+@pytest.fixture
+def app(refresh_token_store: InMemoryRefreshTokenStore) -> FastAPI:
     reset_limiter_state()
     app = create_app()
+    app.dependency_overrides[auth_router.get_refresh_token_store] = lambda: refresh_token_store
     yield app
     app.dependency_overrides.clear()
 

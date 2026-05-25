@@ -12,10 +12,12 @@ services:
       - .env
     environment:
       RATE_LIMIT_STORAGE_URI: redis://redis-rate-limiter:6379
+      REFRESH_TOKEN_REDIS_URL: redis://redis-refresh:6379
     depends_on:
       - db
       - redis
       - redis-rate-limiter
+      - redis-refresh
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()"]
       interval: 10s
@@ -58,5 +60,20 @@ services:
       timeout: 3s
       retries: 5
 
+  redis-refresh:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    restart: unless-stopped
+    ports:
+      - "6381:6379"
+    volumes:
+      - redis_refresh_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
 volumes:
   bookshop_db:
+  redis_refresh_data:
