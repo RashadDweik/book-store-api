@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException, status
+from sqlalchemy.exc import IntegrityError
 
 import app.services.user_service as user_service_module
 from app.repositories.user_repository import UserRepository
@@ -13,6 +14,12 @@ from app.services.user_service import UserService
 
 
 pytestmark = pytest.mark.anyio
+
+
+class DummyUniqueViolationError(Exception):
+    def __init__(self, message: str, constraint_name: str | None = None) -> None:
+        super().__init__(message)
+        self.constraint_name = constraint_name
 
 
 async def test_register_creates_user(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,6 +64,34 @@ async def test_register_rejects_duplicate_email() -> None:
         await service.register(data)
 
     assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+
+
+async def test_register_maps_email_unique_integrity_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: simulate a concurrent insert that trips the email unique constraint.
+    repo = AsyncMock(spec=UserRepository)
+    repo.get_by_email = AsyncMock(return_value=None)
+    repo.get_by_id = AsyncMock()
+    roles = AsyncMock(spec=RoleRepository)
+    roles.get_id_by_name = AsyncMock(return_value=uuid4())
+    monkeypatch.setattr(user_service_module, "hash_password", lambda value: "hashed")
+    integrity_error = IntegrityError(
+        "INSERT INTO users (...) VALUES (...)",
+        {},
+        DummyUniqueViolationError(
+            'duplicate key value violates unique constraint "uq_users_email"',
+            constraint_name="uq_users_email",
+        ),
+    )
+    repo.create = AsyncMock(side_effect=integrity_error)
+    service = UserService(repo, roles)
+    data = UserCreate(email="user@example.com", full_name="Test User", password="Password1")
+
+    # Act/Assert: maps to a 400 with the standard message.
+    with pytest.raises(HTTPException) as exc:
+        await service.register(data)
+
+    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.detail == "Email already registered."
 
 
 async def test_authenticate_rejects_missing_user() -> None:
@@ -201,3 +236,28 @@ async def test_update_profile_rejects_missing_user() -> None:
         await service.update_profile(uuid4(), UserUpdate(full_name="New Name"))
 
     assert exc.value.status_code == status.HTTP_404_NOT_FOUND
+
+
+async def test_update_profile_maps_email_unique_integrity_error() -> None:
+    # Arrange: simulate an email update that violates the unique constraint.
+    user = SimpleNamespace(id=uuid4())
+    repo = AsyncMock(spec=UserRepository)
+    repo.get_by_id = AsyncMock(return_value=user)
+    integrity_error = IntegrityError(
+        "UPDATE users SET email=:email WHERE id=:id",
+        {},
+        DummyUniqueViolationError(
+            'duplicate key value violates unique constraint "uq_users_email"',
+            constraint_name="uq_users_email",
+        ),
+    )
+    repo.update = AsyncMock(side_effect=integrity_error)
+    roles = AsyncMock(spec=RoleRepository)
+    service = UserService(repo, roles)
+
+    # Act/Assert: maps to a 400 with the standard message.
+    with pytest.raises(HTTPException) as exc:
+        await service.update_profile(user.id, UserUpdate(email="taken@example.com"))
+
+    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.detail == "Email already registered."
