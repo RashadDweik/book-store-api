@@ -77,6 +77,9 @@ class FailingRefreshTokenStore:
     async def get_subject(self, token: str) -> str | None:
         raise self._error
 
+    async def revoke(self, token: str) -> None:
+        raise self._error
+
 
 def build_user(**overrides) -> SimpleNamespace:
     payload = {
@@ -333,6 +336,76 @@ async def test_refresh_returns_503_when_refresh_store_unavailable(app: FastAPI) 
         )
 
     # Assert: refresh reports the refresh store failure.
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
+
+
+# Logout revokes refresh tokens and prevents future refresh.
+async def test_logout_revokes_refresh_token(
+    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+) -> None:
+    # Arrange: login to obtain a stored refresh token.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        refresh_token = login_response.json()["refresh_token"]
+
+        # Act: logout and then attempt to refresh again.
+        logout_response = await client.post(
+            "/api/v1/auth/logout",
+            json={"refresh_token": refresh_token},
+        )
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: logout succeeds and refresh token is no longer valid.
+    assert logout_response.status_code == status.HTTP_204_NO_CONTENT
+    assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Logout rejects malformed refresh tokens.
+async def test_logout_rejects_invalid_token(app: FastAPI) -> None:
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/auth/logout",
+            json={"refresh_token": "not-a-token"},
+        )
+
+    assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Logout returns 503 when the refresh token store is unavailable.
+async def test_logout_returns_503_when_refresh_store_unavailable(app: FastAPI) -> None:
+    # Arrange: create a valid refresh token but fail on revoke.
+    user = build_user()
+    refresh_token = create_refresh_token(str(user.id))
+    app.dependency_overrides[auth_router.get_refresh_token_store] = (
+        lambda: FailingRefreshTokenStore()
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/auth/logout",
+            json={"refresh_token": refresh_token},
+        )
+
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
 

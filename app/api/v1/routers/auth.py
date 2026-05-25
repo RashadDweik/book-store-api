@@ -14,7 +14,7 @@ from app.core.refresh_token_store import RefreshTokenStore, build_refresh_token_
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import RefreshRequest, TokenResponse, UserCreate, UserResponse
+from app.schemas.user import LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserResponse
 from app.services.user_service import UserService
 
 
@@ -106,3 +106,29 @@ async def refresh_access_token(
 
     access_token = create_access_token(str(subject))
     return TokenResponse(access_token=access_token, refresh_token=payload.refresh_token)
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout_user(
+    payload: LogoutRequest,
+    refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
+) -> None:
+    # Validate refresh token and revoke it to end the session.
+    token_payload = decode_token(payload.refresh_token)
+    subject = token_payload.get("sub")
+    if not subject or token_payload.get("type") != "refresh":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Token is invalid or expired.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    try:
+        await refresh_store.revoke(payload.refresh_token)
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Refresh token store is unavailable. Try again later.",
+        ) from exc
+
+    return None
