@@ -17,6 +17,7 @@ from starlette.responses import Response
 from app.api.v1.router import api_router
 from app.core.config import Settings, get_settings
 from app.core.limiter import limiter
+from app.core.refresh_token_store import build_refresh_token_store
 
 
 # Configure structured logging once at import time.
@@ -69,6 +70,9 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("app.startup", service=settings.APP_NAME)
         yield
+        refresh_store = getattr(app.state, "refresh_token_store", None)
+        if refresh_store is not None:
+            await refresh_store.close()
         logger.info("app.shutdown", service=settings.APP_NAME)
 
     app = FastAPI(
@@ -81,6 +85,7 @@ def create_app() -> FastAPI:
     # Store shared objects on app.state for later use.
     app.state.settings = settings
     app.state.limiter = limiter
+    app.state.refresh_token_store = build_refresh_token_store(settings)
 
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
