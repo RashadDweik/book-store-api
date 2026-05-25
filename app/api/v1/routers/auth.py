@@ -4,6 +4,7 @@ from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
@@ -59,11 +60,17 @@ async def login_user(
     access_token = create_access_token(str(user.id))
     refresh_token = create_refresh_token(str(user.id))
     # Persist refresh token so we can reject revoked/unknown tokens later.
-    await refresh_store.store(
-        refresh_token,
-        str(user.id),
-        timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    )
+    try:
+        await refresh_store.store(
+            refresh_token,
+            str(user.id),
+            timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Refresh token store is unavailable. Try again later.",
+        ) from exc
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -83,7 +90,13 @@ async def refresh_access_token(
         )
 
     # Ensure the refresh token exists in storage and matches the subject.
-    stored_subject = await refresh_store.get_subject(payload.refresh_token)
+    try:
+        stored_subject = await refresh_store.get_subject(payload.refresh_token)
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Refresh token store is unavailable. Try again later.",
+        ) from exc
     if stored_subject is None or stored_subject != str(subject):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

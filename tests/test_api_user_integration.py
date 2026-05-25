@@ -1,11 +1,12 @@
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, status
+from redis.exceptions import RedisError
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db"
 os.environ["SECRET_KEY"] = "test-secret"
 
@@ -13,6 +14,7 @@ from app.api.v1.routers import auth as auth_router
 from app.api.v1.routers import users as users_router
 from app.core.dependencies import get_current_user
 from app.core.limiter import limiter
+from app.core.security import create_refresh_token
 from app.main import create_app
 from app.services.user_service import UserService
 
@@ -63,6 +65,17 @@ class InMemoryRefreshTokenStore:
 
     async def revoke(self, token: str) -> None:
         self._tokens.pop(token, None)
+
+
+class FailingRefreshTokenStore:
+    def __init__(self, error: Exception | None = None) -> None:
+        self._error = error or RedisError("Redis unavailable")
+
+    async def store(self, token: str, subject: str, expires_in) -> None:
+        raise self._error
+
+    async def get_subject(self, token: str) -> str | None:
+        raise self._error
 
 
 def build_user(**overrides) -> SimpleNamespace:
@@ -173,6 +186,31 @@ async def test_login_returns_tokens(app: FastAPI) -> None:
     assert body["refresh_token"]
 
 
+# Login stores refresh tokens for later validation.
+async def test_login_stores_refresh_token(
+    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+) -> None:
+    # Arrange: override the service to return a known user.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: login and capture the refresh token.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+
+    # Assert: refresh token is stored for the issuing subject.
+    refresh_token = response.json()["refresh_token"]
+    stored_subject = await refresh_token_store.get_subject(refresh_token)
+    assert stored_subject == str(user.id)
+
+
 # Refresh issues a new access token from a refresh token.
 async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
     # Arrange: login to obtain a refresh token.
@@ -203,6 +241,51 @@ async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
     assert body["refresh_token"] == refresh_token
 
 
+# Refresh rejects tokens that are not stored.
+async def test_refresh_rejects_unknown_refresh_token(app: FastAPI) -> None:
+    # Arrange: create a refresh token without storing it.
+    user = build_user()
+    refresh_token = create_refresh_token(str(user.id))
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to refresh with an unknown token.
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: refresh tokens must exist in storage.
+    assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Login returns 503 when the refresh token store is unavailable.
+async def test_login_returns_503_when_refresh_store_unavailable(app: FastAPI) -> None:
+    # Arrange: override the refresh token store to fail on write.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+    app.dependency_overrides[auth_router.get_refresh_token_store] = (
+        lambda: FailingRefreshTokenStore()
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to login.
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+
+    # Assert: login reports the refresh store failure.
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
+
+
 # Refresh must reject access tokens.
 async def test_refresh_rejects_access_token(app: FastAPI) -> None:
     # Arrange: login to obtain an access token.
@@ -227,6 +310,88 @@ async def test_refresh_rejects_access_token(app: FastAPI) -> None:
         )
 
     # Assert: access tokens are not accepted at the refresh endpoint.
+    assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Refresh returns 503 when the refresh token store is unavailable.
+async def test_refresh_returns_503_when_refresh_store_unavailable(app: FastAPI) -> None:
+    # Arrange: create a valid refresh token but fail on lookup.
+    user = build_user()
+    refresh_token = create_refresh_token(str(user.id))
+    app.dependency_overrides[auth_router.get_refresh_token_store] = (
+        lambda: FailingRefreshTokenStore()
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: attempt to refresh.
+        response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: refresh reports the refresh store failure.
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
+
+
+# Refresh rejects revoked tokens.
+async def test_refresh_rejects_revoked_token(
+    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+) -> None:
+    # Arrange: login to obtain a stored refresh token.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        login_response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+        refresh_token = login_response.json()["refresh_token"]
+
+        # Act: revoke and then attempt to refresh.
+        await refresh_token_store.revoke(refresh_token)
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: revoked refresh tokens are rejected.
+    assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
+
+
+# Refresh rejects tokens with a mismatched stored subject.
+async def test_refresh_rejects_subject_mismatch(
+    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+) -> None:
+    # Arrange: store a token under a different subject.
+    user = build_user()
+    other_user = build_user()
+    refresh_token = create_refresh_token(str(user.id))
+    await refresh_token_store.store(
+        refresh_token,
+        str(other_user.id),
+        timedelta(days=1),
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        # Act: refresh with a token whose stored subject does not match.
+        refresh_response = await client.post(
+            "/api/v1/auth/refresh",
+            json={"refresh_token": refresh_token},
+        )
+
+    # Assert: subject mismatches are rejected.
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
 
 
