@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
     REDIS_URL: str = "redis://localhost:6379"
+    RATE_LIMIT_STORAGE_URI: str = "redis://localhost:6380"
     SENTRY_DSN: str = ""
     ALLOWED_ORIGINS: list[str] = ["*"]
 
