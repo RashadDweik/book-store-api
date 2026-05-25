@@ -6,12 +6,8 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, status
-
-os.environ.setdefault(
-    "DATABASE_URL",
-    "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db",
-)
-os.environ.setdefault("SECRET_KEY", "test-secret")
+os.environ["DATABASE_URL"] = "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db"
+os.environ["SECRET_KEY"] = "test-secret"
 
 from app.api.v1.routers import auth as auth_router
 from app.api.v1.routers import users as users_router
