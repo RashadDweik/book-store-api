@@ -18,6 +18,10 @@ class UserService:
         self._repo = repo
         self._roles = roles
 
+    @property
+    def db(self):
+        return getattr(self._repo, "_db", None)
+
     @staticmethod
     def _is_email_unique_violation(error: IntegrityError) -> bool:
         """Return True when IntegrityError is due to users.email uniqueness."""
