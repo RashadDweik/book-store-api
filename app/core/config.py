@@ -41,10 +41,12 @@ class Settings(BaseSettings):
             return self
 
         parts = urlsplit(self.REFRESH_TOKEN_REDIS_URL)
+        from urllib.parse import quote
         host = parts.hostname or "localhost"
         port = f":{parts.port}" if parts.port else ""
         path = parts.path or "/0"
-        netloc = f":{self.REDIS_REFRESH_PASSWORD}@{host}{port}"
+        password_enc = quote(self.REDIS_REFRESH_PASSWORD, safe="")
+        netloc = f":{password_enc}@{host}{port}"
         self.REFRESH_TOKEN_REDIS_URL = urlunsplit((parts.scheme or "redis", netloc, path, "", ""))
         return self
 
