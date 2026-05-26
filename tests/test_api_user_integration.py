@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta, timezone
+import hashlib
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -81,6 +82,30 @@ class FailingRefreshTokenStore:
         raise self._error
 
 
+class StubAuthAuditLogService:
+    def __init__(self) -> None:
+        self.calls: list[dict] = []
+
+    async def insert_event(
+        self,
+        *,
+        user_id,
+        event,
+        ip_address=None,
+        user_agent=None,
+        refresh_token_hash=None,
+    ) -> None:
+        self.calls.append(
+            {
+                "user_id": user_id,
+                "event": event,
+                "ip_address": ip_address,
+                "user_agent": user_agent,
+                "refresh_token_hash": refresh_token_hash,
+            }
+        )
+
+
 def build_user(**overrides) -> SimpleNamespace:
     payload = {
         "id": uuid4(),
@@ -111,10 +136,21 @@ def refresh_token_store() -> InMemoryRefreshTokenStore:
 
 
 @pytest.fixture
-def app(refresh_token_store: InMemoryRefreshTokenStore) -> FastAPI:
+def audit_service_stub() -> StubAuthAuditLogService:
+    return StubAuthAuditLogService()
+
+
+@pytest.fixture
+def app(
+    refresh_token_store: InMemoryRefreshTokenStore,
+    audit_service_stub: StubAuthAuditLogService,
+) -> FastAPI:
     reset_limiter_state()
     app = create_app()
     app.dependency_overrides[auth_router.get_refresh_token_store] = lambda: refresh_token_store
+    app.dependency_overrides[auth_router.get_auth_audit_log_service] = (
+        lambda: audit_service_stub
+    )
     yield app
     app.dependency_overrides.clear()
 
@@ -134,7 +170,7 @@ def override_services(
 
 
 # Register returns a valid user payload.
-async def test_register_returns_user(app: FastAPI) -> None:
+async def test_register_returns_user(app: FastAPI, audit_service_stub: StubAuthAuditLogService) -> None:
     # Arrange: override the service to return a known user.
     user = build_user()
     service = StubUserService(user)
@@ -163,9 +199,13 @@ async def test_register_returns_user(app: FastAPI) -> None:
     assert body["is_admin"] is False
     assert "created_at" in body
 
+    assert len(audit_service_stub.calls) == 1
+    assert audit_service_stub.calls[0]["event"] == "register"
+    assert audit_service_stub.calls[0]["user_id"] == user.id
+
 
 # Login issues access and refresh tokens.
-async def test_login_returns_tokens(app: FastAPI) -> None:
+async def test_login_returns_tokens(app: FastAPI, audit_service_stub: StubAuthAuditLogService) -> None:
     # Arrange: override the service to return a known user.
     user = build_user()
     service = StubUserService(user)
@@ -187,6 +227,12 @@ async def test_login_returns_tokens(app: FastAPI) -> None:
     assert body["token_type"] == "bearer"
     assert body["access_token"]
     assert body["refresh_token"]
+
+    assert len(audit_service_stub.calls) == 1
+    assert audit_service_stub.calls[0]["event"] == "login"
+    assert audit_service_stub.calls[0]["user_id"] == user.id
+    expected_hash = hashlib.sha256(body["refresh_token"].encode("utf-8")).hexdigest()
+    assert audit_service_stub.calls[0]["refresh_token_hash"] == expected_hash
 
 
 # Login stores refresh tokens for later validation.
@@ -289,6 +335,30 @@ async def test_login_returns_503_when_refresh_store_unavailable(app: FastAPI) ->
     assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
 
 
+async def test_login_does_not_audit_when_refresh_store_unavailable(
+    app: FastAPI, audit_service_stub: StubAuthAuditLogService
+) -> None:
+    # Arrange: override the service to return a known user and fail on refresh store write.
+    user = build_user()
+    service = StubUserService(user)
+    override_services(app, auth_service=service)
+    app.dependency_overrides[auth_router.get_refresh_token_store] = (
+        lambda: FailingRefreshTokenStore()
+    )
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app),
+        base_url="http://test",
+    ) as client:
+        response = await client.post(
+            "/api/v1/auth/login",
+            data={"username": "user@example.com", "password": "Password1"},
+        )
+
+    assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
+    assert audit_service_stub.calls == []
+
+
 # Refresh must reject access tokens.
 async def test_refresh_rejects_access_token(app: FastAPI) -> None:
     # Arrange: login to obtain an access token.
@@ -342,7 +412,9 @@ async def test_refresh_returns_503_when_refresh_store_unavailable(app: FastAPI) 
 
 # Logout revokes refresh tokens and prevents future refresh.
 async def test_logout_revokes_refresh_token(
-    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+    app: FastAPI,
+    refresh_token_store: InMemoryRefreshTokenStore,
+    audit_service_stub: StubAuthAuditLogService,
 ) -> None:
     # Arrange: login to obtain a stored refresh token.
     user = build_user()
@@ -373,9 +445,17 @@ async def test_logout_revokes_refresh_token(
     assert logout_response.status_code == status.HTTP_204_NO_CONTENT
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
 
+    logout_calls = [call for call in audit_service_stub.calls if call["event"] == "logout"]
+    assert len(logout_calls) == 1
+    assert logout_calls[0]["user_id"] == user.id
+    expected_hash = hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+    assert logout_calls[0]["refresh_token_hash"] == expected_hash
+
 
 # Logout rejects malformed refresh tokens.
-async def test_logout_rejects_invalid_token(app: FastAPI) -> None:
+async def test_logout_rejects_invalid_token(
+    app: FastAPI, audit_service_stub: StubAuthAuditLogService
+) -> None:
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
@@ -386,10 +466,13 @@ async def test_logout_rejects_invalid_token(app: FastAPI) -> None:
         )
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert audit_service_stub.calls == []
 
 
 # Logout returns 503 when the refresh token store is unavailable.
-async def test_logout_returns_503_when_refresh_store_unavailable(app: FastAPI) -> None:
+async def test_logout_returns_503_when_refresh_store_unavailable(
+    app: FastAPI, audit_service_stub: StubAuthAuditLogService
+) -> None:
     # Arrange: create a valid refresh token but fail on revoke.
     user = build_user()
     refresh_token = create_refresh_token(str(user.id))
@@ -408,6 +491,7 @@ async def test_logout_returns_503_when_refresh_store_unavailable(app: FastAPI) -
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
+    assert audit_service_stub.calls == []
 
 
 # Refresh rejects revoked tokens.
@@ -625,7 +709,9 @@ async def test_login_rejects_missing_fields(app: FastAPI) -> None:
 
 
 # Login rejects invalid credentials with 401.
-async def test_login_rejects_invalid_credentials(app: FastAPI) -> None:
+async def test_login_rejects_invalid_credentials(
+    app: FastAPI, audit_service_stub: StubAuthAuditLogService
+) -> None:
     # Arrange: service raises an invalid credential error.
     user = build_user()
     service = StubUserService(
@@ -650,6 +736,7 @@ async def test_login_rejects_invalid_credentials(app: FastAPI) -> None:
 
     # Assert: invalid credentials return 401.
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
+    assert audit_service_stub.calls == []
 
 
 # Login rejects inactive users with 403.
