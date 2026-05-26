@@ -70,14 +70,25 @@ async def register_user(
 ) -> UserResponse:
     # Register a new user and return the created profile.
     user = await service.register(data)
-    background_tasks.add_task(
-        audit.insert_event,
-        user_id=UUID(str(user.id)),
-        event="register",
-        ip_address=_get_request_ip(request),
-        user_agent=_get_user_agent(request),
-        refresh_token_hash=None,
-    )
+    db = getattr(service, "db", None)
+    if isinstance(db, AsyncSession):
+        await audit.insert_event_in_session(
+            db,
+            user_id=UUID(str(user.id)),
+            event="register",
+            ip_address=_get_request_ip(request),
+            user_agent=_get_user_agent(request),
+            refresh_token_hash=None,
+        )
+    else:
+        background_tasks.add_task(
+            audit.insert_event,
+            user_id=UUID(str(user.id)),
+            event="register",
+            ip_address=_get_request_ip(request),
+            user_agent=_get_user_agent(request),
+            refresh_token_hash=None,
+        )
     return user
 
 

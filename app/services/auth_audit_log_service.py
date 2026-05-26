@@ -10,6 +10,8 @@ from uuid import UUID
 
 import structlog
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.core.database import AsyncSessionFactory
 from app.repositories.auth_audit_log_repository import AuthAuditLogRepository
 
@@ -57,14 +59,48 @@ class AuthAuditLogService:
                         pass
                     logger.warning(
                         "auth.audit_log_insert_failed",
-                        event=event,
+                        audit_event=event,
                         user_id=str(user_id),
                         exc_info=True,
                     )
         except Exception:
             logger.warning(
                 "auth.audit_log_session_failed",
-                event=event,
+                audit_event=event,
+                user_id=str(user_id),
+                exc_info=True,
+            )
+
+    async def insert_event_in_session(
+        self,
+        db: AsyncSession,
+        *,
+        user_id: UUID,
+        event: AuthAuditEvent,
+        ip_address: str | None = None,
+        user_agent: str | None = None,
+        refresh_token_hash: str | None = None,
+    ) -> None:
+        """Insert an audit row using an existing session.
+
+        This method never raises.
+        """
+        try:
+            async with db.begin_nested():
+                repo = AuthAuditLogRepository(db)
+                await repo.create(
+                    {
+                        "user_id": user_id,
+                        "event": event,
+                        "ip_address": ip_address,
+                        "user_agent": user_agent,
+                        "refresh_token_hash": refresh_token_hash,
+                    }
+                )
+        except Exception:
+            logger.warning(
+                "auth.audit_log_insert_failed",
+                audit_event=event,
                 user_id=str(user_id),
                 exc_info=True,
             )
