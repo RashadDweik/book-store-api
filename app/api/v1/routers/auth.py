@@ -149,8 +149,33 @@ async def refresh_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    new_refresh_token = create_refresh_token(str(subject))
+    try:
+        await refresh_store.store(
+            new_refresh_token,
+            str(subject),
+            timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+    except RedisError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Refresh token store is unavailable. Try again later.",
+        ) from exc
+
+    try:
+        await refresh_store.revoke(payload.refresh_token)
+    except RedisError as exc:
+        try:
+            await refresh_store.revoke(new_refresh_token)
+        except RedisError:
+            pass
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Refresh token store is unavailable. Try again later.",
+        ) from exc
+
     access_token = create_access_token(str(subject))
-    return TokenResponse(access_token=access_token, refresh_token=payload.refresh_token)
+    return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)

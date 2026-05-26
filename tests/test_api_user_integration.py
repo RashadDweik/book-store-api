@@ -260,8 +260,10 @@ async def test_login_stores_refresh_token(
     assert stored_subject == str(user.id)
 
 
-# Refresh issues a new access token from a refresh token.
-async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
+# Refresh issues a new access token and rotates the refresh token.
+async def test_refresh_issues_new_access_token(
+    app: FastAPI, refresh_token_store: InMemoryRefreshTokenStore
+) -> None:
     # Arrange: login to obtain a refresh token.
     user = build_user()
     service = StubUserService(user)
@@ -283,11 +285,16 @@ async def test_refresh_issues_new_access_token(app: FastAPI) -> None:
             json={"refresh_token": refresh_token},
         )
 
-    # Assert: access token is re-issued and refresh token is preserved.
+    # Assert: access token is re-issued and refresh token is rotated.
     assert refresh_response.status_code == 200
     body = refresh_response.json()
     assert body["access_token"]
-    assert body["refresh_token"] == refresh_token
+    assert body["refresh_token"]
+    assert body["refresh_token"] != refresh_token
+
+    rotated_refresh_token = body["refresh_token"]
+    assert await refresh_token_store.get_subject(rotated_refresh_token) == str(user.id)
+    assert await refresh_token_store.get_subject(refresh_token) is None
 
 
 # Refresh rejects tokens that are not stored.
