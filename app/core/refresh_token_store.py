@@ -33,7 +33,7 @@ class RefreshTokenStore:
         await self.redis.delete(self._key(token))
 
     async def close(self) -> None:
-        await self.redis.close()
+        await self.redis.aclose()
 
 
 def build_refresh_token_store(settings: Settings) -> RefreshTokenStore:
