@@ -69,7 +69,7 @@ services:
     volumes:
       - redis_refresh_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}\" ping"]
       interval: 10s
       timeout: 3s
       retries: 5
