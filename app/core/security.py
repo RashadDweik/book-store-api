@@ -25,6 +25,16 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
     # Build a JWT access token with subject and expiration.
+    """
+    Create a JWT access token for the given subject with an expiration claim.
+    
+    Parameters:
+    	subject (str): Identifier to include in the token's `sub` claim.
+    	expires_delta (timedelta | None): Token lifetime; when `None`, uses the application's ACCESS_TOKEN_EXPIRE_MINUTES setting.
+    
+    Returns:
+    	access_token (str): Encoded JWT containing `sub`, `type` set to `"access"`, and `exp` (expiration time).
+    """
     if expires_delta is None:
         expires_delta = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
 
@@ -35,6 +45,15 @@ def create_access_token(subject: str, expires_delta: timedelta | None = None) ->
 
 def create_refresh_token(subject: str) -> str:
     # Build a longer-lived JWT refresh token for the subject.
+    """
+    Create a long-lived JWT refresh token for the given subject.
+    
+    Parameters:
+        subject (str): Identifier to include in the token's "sub" claim.
+    
+    Returns:
+        str: JWT refresh token string containing the `sub` claim, a `type` claim set to "refresh", and an expiration timestamp.
+    """
     expire_at = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {"sub": subject, "type": "refresh", "exp": expire_at}
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)

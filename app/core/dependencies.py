@@ -23,6 +23,19 @@ async def get_current_user(
     db: AsyncSession = Depends(get_db),
 ) -> User:
     # Resolve the current user from the JWT subject and enforce active status.
+    """
+    Resolve the authenticated User associated with a JWT bearer token.
+    
+    Decodes the provided OAuth2 bearer token, loads the corresponding User (including their role) from the database, and enforces that the user exists and is active.
+    
+    Returns:
+        The resolved `User` instance corresponding to the token's `sub` claim.
+    
+    Raises:
+        HTTPException: 401 if the token is invalid or expired.
+        HTTPException: 401 if no user matches the token's subject.
+        HTTPException: 403 if the resolved user exists but is not active.
+    """
     payload = decode_token(token)
     subject = payload.get("sub")
 

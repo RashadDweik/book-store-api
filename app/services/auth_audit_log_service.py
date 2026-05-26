@@ -21,6 +21,12 @@ logger = structlog.get_logger()
 
 class AuthAuditLogService:
     def __init__(self) -> None:
+        """
+        Initialize the service and store the provided AsyncSessionFactory for creating database sessions.
+        
+        Sets:
+            self._session_factory: AsyncSessionFactory used to open async DB sessions.
+        """
         self._session_factory = AsyncSessionFactory
 
     async def insert_event(
@@ -32,9 +38,17 @@ class AuthAuditLogService:
         user_agent: str | None = None,
         refresh_token_hash: str | None = None,
     ) -> None:
-        """Insert an audit row.
-
-        This method never raises.
+        """
+        Insert an authentication audit record in a best-effort manner.
+        
+        Attempts to persist an audit row for the given user and event. Failures are swallowed: on repository/transaction errors it attempts a rollback and logs "auth.audit_log_insert_failed" with `event` and `user_id`; if session acquisition fails it logs "auth.audit_log_session_failed" with `event` and `user_id`. This function never raises and always returns None.
+        
+        Parameters:
+            user_id (UUID): ID of the user associated with the event.
+            event (AuthAuditEvent): One of "register", "login", or "logout".
+            ip_address (str | None): Client IP address, if available.
+            user_agent (str | None): Client user agent string, if available.
+            refresh_token_hash (str | None): Hash of the refresh token, if available.
         """
         try:
             async with self._session_factory() as db:

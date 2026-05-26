@@ -59,7 +59,14 @@ class RequestTimingMiddleware(BaseHTTPMiddleware):
 
 
 def create_app() -> FastAPI:
-    """Create and configure the FastAPI application instance."""
+    """
+    Builds the FastAPI application instance preconfigured for this service.
+    
+    Configures optional Sentry error reporting, a lifespan that logs startup/shutdown and closes the refresh token store on shutdown, and stores shared components (settings, limiter, refresh token store) on app.state. Adds middlewares (request timing, SlowAPI, CORS), registers the rate-limit exception handler, mounts the API router under /api/v1, and exposes a health endpoint.
+    
+    Returns:
+        A FastAPI application instance configured with routes, middleware, exception handlers, and shared state.
+    """
     settings: Settings = get_settings()
     # Enable Sentry error reporting when configured.
     if settings.SENTRY_DSN:
@@ -68,6 +75,12 @@ def create_app() -> FastAPI:
     # Log startup and shutdown events for service visibility.
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        """
+        Manage application lifespan: log startup/shutdown and close the app's refresh token store if present.
+        
+        Parameters:
+            app (FastAPI): The application instance whose state may contain `refresh_token_store`. During startup this logs `"app.startup"` with the service name; it yields control for the app's lifetime and on shutdown closes `refresh_token_store` (awaiting its `close()` coroutine) if present, then logs `"app.shutdown"`.
+        """
         logger.info("app.startup", service=settings.APP_NAME)
         yield
         refresh_store = getattr(app.state, "refresh_token_store", None)
@@ -100,6 +113,12 @@ def create_app() -> FastAPI:
 
     @app.get("/health", tags=["health"])
     async def health() -> dict:
+        """
+        Provide the application's health status and service name.
+        
+        Returns:
+            dict: A mapping with keys "status" (the literal string "ok") and "service" (the application's name).
+        """
         return {"status": "ok", "service": settings.APP_NAME}
 
     app.include_router(api_router, prefix="/api/v1")

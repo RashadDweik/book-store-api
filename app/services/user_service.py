@@ -15,12 +15,23 @@ from app.schemas.user import UserCreate, UserUpdate
 class UserService:
     def __init__(self, repo: UserRepository, roles: RoleRepository) -> None:
         # Store repositories used for persistence and lookups.
+        """
+        Initialize the service with repository instances for user persistence and role lookups.
+        """
         self._repo = repo
         self._roles = roles
 
     @staticmethod
     def _is_email_unique_violation(error: IntegrityError) -> bool:
-        """Return True when IntegrityError is due to users.email uniqueness."""
+        """
+        Detect whether an IntegrityError corresponds to a unique constraint violation for the users.email column.
+        
+        Parameters:
+            error (IntegrityError): The database integrity error to inspect.
+        
+        Returns:
+            True if the error indicates a unique constraint violation for `users.email`, False otherwise.
+        """
         constraint_name = getattr(getattr(error, "orig", None), "constraint_name", None)
         if constraint_name == "uq_users_email":
             return True
@@ -40,6 +51,20 @@ class UserService:
 
     async def register(self, data: UserCreate) -> User:
         # Register a new user after enforcing unique email and hashing password.
+        """
+        Register a new user, enforcing email uniqueness, assigning the default "user" role, and hashing the provided password.
+        
+        Parameters:
+            data (UserCreate): User creation payload containing user fields including a plaintext `password`.
+        
+        Returns:
+            User: The created user record; the repository is queried for a fresh copy and that reloaded instance is returned when available.
+        
+        Raises:
+            HTTPException: With status 400 and detail "Email already registered." if the email is already in use.
+            HTTPException: With status 500 and detail "Default role 'user' is not configured." if the default role cannot be resolved.
+            IntegrityError: Re-raised for integrity violations that are not recognized as the users.email unique constraint.
+        """
         existing = await self._repo.get_by_email(data.email)
         if existing:
             raise HTTPException(
@@ -73,6 +98,16 @@ class UserService:
 
     async def authenticate(self, email: str, password: str) -> User:
         # Validate credentials and enforce active status.
+        """
+        Authenticate a user by email and password and enforce that the account is active.
+        
+        Returns:
+            The authenticated User object.
+        
+        Raises:
+            HTTPException: status 401 when the email or password are invalid.
+            HTTPException: status 403 when the user's account is inactive.
+        """
         user = await self._repo.get_by_email(email)
         if user is None or not verify_password(password, user.hashed_password):
             raise HTTPException(
@@ -91,6 +126,15 @@ class UserService:
 
     async def get_profile(self, user_id: UUID) -> User:
         # Return a user profile or raise when missing.
+        """
+        Retrieve the user profile for the given user identifier.
+        
+        Returns:
+            user (User): The user matching `user_id`.
+        
+        Raises:
+            HTTPException: If no user exists for the given `user_id` (404).
+        """
         user = await self._repo.get_by_id(user_id)
         if user is None:
             raise HTTPException(
@@ -102,6 +146,20 @@ class UserService:
 
     async def update_profile(self, user_id: UUID, data: UserUpdate) -> User:
         # Apply profile updates when provided, otherwise return current data.
+        """
+        Update a user's profile with the fields provided in `data`.
+        
+        Parameters:
+            user_id (UUID): Identifier of the user to update.
+            data (UserUpdate): Partial user data; only fields explicitly set on this model will be applied.
+        
+        Returns:
+            User: The updated user object; the repository is reloaded when possible and the reloaded user is returned.
+        
+        Raises:
+            HTTPException: with 404 status if the user does not exist.
+            HTTPException: with 400 status if the update violates the email-uniqueness constraint (email already registered).
+        """
         user = await self._repo.get_by_id(user_id)
         if user is None:
             raise HTTPException(

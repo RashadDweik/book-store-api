@@ -46,6 +46,14 @@ def test_create_access_token_custom_expiry() -> None:
 
 # Refresh tokens should include the subject and expiration.
 def test_create_refresh_token_contains_subject() -> None:
+    """
+    Verifies a generated refresh JWT contains the expected subject, token type, and expiration claim.
+    
+    Asserts that the decoded payload has:
+    - "sub" equal to "user-uuid"
+    - "type" equal to "refresh"
+    - an "exp" claim present
+    """
     token = security.create_refresh_token("user-uuid")
     payload = security.decode_token(token)
 

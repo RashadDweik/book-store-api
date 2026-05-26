@@ -18,6 +18,13 @@ pytestmark = pytest.mark.anyio
 
 class DummyUniqueViolationError(Exception):
     def __init__(self, message: str, constraint_name: str | None = None) -> None:
+        """
+        Initialize the error with a message and optional database constraint name.
+        
+        Parameters:
+            message (str): Human-readable error message describing the violation.
+            constraint_name (str | None): Optional name of the database constraint that was violated (e.g., "uq_users_email").
+        """
         super().__init__(message)
         self.constraint_name = constraint_name
 

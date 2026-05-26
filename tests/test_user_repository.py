@@ -85,6 +85,11 @@ async def test_create_persists_user() -> None:
 
 async def test_update_applies_changes() -> None:
     # Arrange: existing user and session hooks.
+    """
+    Verifies that UserRepository.update applies the provided changes to the given User and triggers session persistence.
+    
+    Asserts the passed User object is mutated (identity preserved) and that the session's add, flush, and refresh hooks are called exactly once with the updated user.
+    """
     db = AsyncMock(spec=AsyncSession)
     db.add = Mock()
     db.flush = AsyncMock()

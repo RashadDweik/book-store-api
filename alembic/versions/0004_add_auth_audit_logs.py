@@ -15,6 +15,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    """
+    Create database table and indexes for append-only authentication audit logs.
+    
+    Creates the `auth_audit_logs` table to record authentication events (e.g., register, login, logout) with columns: `id` (UUID primary key), `user_id` (FK to `users.id`), `event`, `ip_address`, `user_agent`, `refresh_token_hash`, `created_at`, and `updated_at`. Also creates indexes on `id`, `user_id`, `event`, `created_at`, and `refresh_token_hash`.
+    """
     op.create_table(
         "auth_audit_logs",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
@@ -49,6 +54,11 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    """
+    Reverts the migration that added the auth_audit_logs table and its indexes.
+    
+    Drops the indexes on refresh_token_hash, created_at, event, user_id, and id for the `auth_audit_logs` table, then drops the `auth_audit_logs` table.
+    """
     op.drop_index("ix_auth_audit_logs_refresh_token_hash", table_name="auth_audit_logs")
     op.drop_index("ix_auth_audit_logs_created_at", table_name="auth_audit_logs")
     op.drop_index("ix_auth_audit_logs_event", table_name="auth_audit_logs")

@@ -35,6 +35,14 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _apply_refresh_redis_password(self) -> "Settings":
+        """
+        Embed REDIS_REFRESH_PASSWORD into REFRESH_TOKEN_REDIS_URL when applicable.
+        
+        If REDIS_REFRESH_PASSWORD is set and REFRESH_TOKEN_REDIS_URL was not explicitly provided, updates REFRESH_TOKEN_REDIS_URL to include the password in the URL's authority component while preserving the scheme, host, port, and path. If the original URL omits host, defaults to "localhost"; if it omits path, defaults to "/0".
+        
+        Returns:
+            self (Settings): The settings instance, possibly with REFRESH_TOKEN_REDIS_URL modified.
+        """
         if not self.REDIS_REFRESH_PASSWORD:
             return self
         if "REFRESH_TOKEN_REDIS_URL" in self.model_fields_set:
@@ -51,5 +59,10 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance to avoid repeated env parsing."""
+    """
+    Get the application's cached Settings instance.
+    
+    Returns:
+        settings (Settings): The loaded Settings object, cached to avoid re-parsing environment variables.
+    """
     return Settings()
