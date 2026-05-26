@@ -1,8 +1,10 @@
 """Authentication routes."""
 
 from datetime import timedelta
+import hashlib
+from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +17,7 @@ from app.core.security import create_access_token, create_refresh_token, decode_
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.user import LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserResponse
+from app.services.auth_audit_log_service import AuthAuditLogService
 from app.services.user_service import UserService
 
 
@@ -38,22 +41,55 @@ def get_refresh_token_store(request: Request) -> RefreshTokenStore:
     return store
 
 
+def get_auth_audit_log_service() -> AuthAuditLogService:
+    return AuthAuditLogService()
+
+
+def _get_request_ip(request: Request) -> str | None:
+    client = getattr(request, "client", None)
+    if client is None:
+        return None
+    return getattr(client, "host", None)
+
+
+def _get_user_agent(request: Request) -> str | None:
+    return request.headers.get("user-agent")
+
+
+def _hash_refresh_token(refresh_token: str) -> str:
+    return hashlib.sha256(refresh_token.encode("utf-8")).hexdigest()
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user(
+    request: Request,
+    background_tasks: BackgroundTasks,
     data: UserCreate,
     service: UserService = Depends(get_user_service),
+    audit: AuthAuditLogService = Depends(get_auth_audit_log_service),
 ) -> UserResponse:
     # Register a new user and return the created profile.
-    return await service.register(data)
+    user = await service.register(data)
+    background_tasks.add_task(
+        audit.insert_event,
+        user_id=UUID(str(user.id)),
+        event="register",
+        ip_address=_get_request_ip(request),
+        user_agent=_get_user_agent(request),
+        refresh_token_hash=None,
+    )
+    return user
 
 
 @router.post("/login", response_model=TokenResponse)
 @limiter.limit("5/minute")
 async def login_user(
     request: Request,
+    background_tasks: BackgroundTasks,
     form_data: OAuth2PasswordRequestForm = Depends(),
     service: UserService = Depends(get_user_service),
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
+    audit: AuthAuditLogService = Depends(get_auth_audit_log_service),
 ) -> TokenResponse:
     # Authenticate credentials and issue access/refresh tokens.
     user = await service.authenticate(form_data.username, form_data.password)
@@ -71,6 +107,15 @@ async def login_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Refresh token store is unavailable. Try again later.",
         ) from exc
+
+    background_tasks.add_task(
+        audit.insert_event,
+        user_id=UUID(str(user.id)),
+        event="login",
+        ip_address=_get_request_ip(request),
+        user_agent=_get_user_agent(request),
+        refresh_token_hash=_hash_refresh_token(refresh_token),
+    )
     return TokenResponse(access_token=access_token, refresh_token=refresh_token)
 
 
@@ -110,8 +155,11 @@ async def refresh_access_token(
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_user(
+    request: Request,
+    background_tasks: BackgroundTasks,
     payload: LogoutRequest,
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
+    audit: AuthAuditLogService = Depends(get_auth_audit_log_service),
 ) -> None:
     # Validate refresh token and revoke it to end the session.
     token_payload = decode_token(payload.refresh_token)
@@ -130,5 +178,19 @@ async def logout_user(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Refresh token store is unavailable. Try again later.",
         ) from exc
+
+    try:
+        user_id = UUID(str(subject))
+    except (TypeError, ValueError):
+        return None
+
+    background_tasks.add_task(
+        audit.insert_event,
+        user_id=user_id,
+        event="logout",
+        ip_address=_get_request_ip(request),
+        user_agent=_get_user_agent(request),
+        refresh_token_hash=_hash_refresh_token(payload.refresh_token),
+    )
 
     return None
