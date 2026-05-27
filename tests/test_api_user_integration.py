@@ -7,6 +7,21 @@ from uuid import uuid4
 import httpx
 import pytest
 from fastapi import FastAPI, HTTPException, status
+try:
+    from limits.storage import storage_from_uri
+
+    def build_limiter_storage():
+        return storage_from_uri("memory://")
+
+except ImportError:
+    try:
+        from limits.storage import MemoryStorage
+    except ImportError:
+        from limits.storage.memory import MemoryStorage
+
+    def build_limiter_storage():
+        # Fallback for older limits versions without storage_from_uri.
+        return MemoryStorage()
 from redis.exceptions import RedisError
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db"
 os.environ["SECRET_KEY"] = "test-secret"
@@ -130,6 +145,33 @@ def reset_limiter_state() -> None:
         clear()
 
 
+def _apply_limiter_storage(target, storage) -> None:
+    for attr_name in ("storage", "_storage", "storage_backend", "_storage_backend"):
+        if hasattr(target, attr_name):
+            try:
+                setattr(target, attr_name, storage)
+            except (AttributeError, TypeError):
+                pass
+
+
+@pytest.fixture
+def limiter_memory_storage(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("RATE_LIMIT_STORAGE_URI", "memory://")
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    storage = build_limiter_storage()
+    _apply_limiter_storage(limiter, storage)
+    for attr_name in ("storage_uri", "_storage_uri"):
+        if hasattr(limiter, attr_name):
+            monkeypatch.setattr(limiter, attr_name, "memory://", raising=False)
+    for attr_name in ("limiter", "_limiter", "rate_limiter", "_rate_limiter"):
+        rate_limiter = getattr(limiter, attr_name, None)
+        if rate_limiter is None:
+            continue
+        _apply_limiter_storage(rate_limiter, storage)
+
+
 @pytest.fixture
 def refresh_token_store() -> InMemoryRefreshTokenStore:
     return InMemoryRefreshTokenStore()
@@ -144,6 +186,7 @@ def audit_service_stub() -> StubAuthAuditLogService:
 def app(
     refresh_token_store: InMemoryRefreshTokenStore,
     audit_service_stub: StubAuthAuditLogService,
+    limiter_memory_storage: None,
 ) -> FastAPI:
     reset_limiter_state()
     app = create_app()
