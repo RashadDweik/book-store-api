@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from fastapi import FastAPI, HTTPException, status
+from fastapi import FastAPI, status
 
 os.environ["DATABASE_URL"] = "postgresql+asyncpg://test_user:test_pass@localhost:5432/test_db"
 os.environ["SECRET_KEY"] = "test-secret"
@@ -74,7 +74,7 @@ def build_book(**overrides) -> SimpleNamespace:
         "title": "Test Book",
         "price": Decimal("19.99"),
         "description": "Desc",
-        "isbn": "978-1-4028-9999-1",
+        "isbn": "0735235902",
         "stock": 10,
         "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
         "authors": [author],
@@ -112,6 +112,7 @@ async def test_list_books_returns_books(app: FastAPI) -> None:
     assert body[0]["id"] == str(book.id)
     assert body[0]["title"] == book.title
     assert str(body[0]["price"]) == str(book.price)
+    assert body[0]["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
     assert body[0]["authors"][0]["id"] == str(book.authors[0].id)
 
 
@@ -130,6 +131,7 @@ async def test_read_book_returns_book(app: FastAPI) -> None:
     body = response.json()
     assert body["id"] == str(book.id)
     assert body["title"] == book.title
+    assert body["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
 
 
 async def test_create_book_requires_admin(app: FastAPI) -> None:
