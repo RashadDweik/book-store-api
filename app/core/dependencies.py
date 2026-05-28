@@ -24,6 +24,13 @@ async def get_current_user(
 ) -> User:
     # Resolve the current user from the JWT subject and enforce active status.
     payload = decode_token(token)
+    # Only accept access tokens for request authentication.
+    if payload.get("type") != "access":
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token type.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     subject = payload.get("sub")
 
     try:
