@@ -71,3 +71,28 @@ class CartRepository:
         for item in result.scalars().all():
             await self._db.delete(item)
         await self._db.flush()
+
+    async def get_cart_dict(self, user_id: UUID) -> dict:
+        """Return a plain mapping for the cart and its items for safe serialization."""
+        cart = await self.get_by_user_id(user_id)
+        if cart is None:
+            cart = await self.create(user_id)
+
+        items_result = await self._db.execute(select(CartItem).where(CartItem.cart_id == cart.id))
+        items = []
+        for item in items_result.scalars().all():
+            items.append(
+                {
+                    "id": item.id,
+                    "book_id": item.book_id,
+                    "quantity": item.quantity,
+                    "created_at": item.created_at,
+                }
+            )
+
+        return {
+            "id": cart.id,
+            "user_id": cart.user_id,
+            "created_at": cart.created_at,
+            "items": items,
+        }

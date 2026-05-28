@@ -8,7 +8,7 @@ from app.models.book import Book
 from app.models.cart import Cart
 from app.repositories.book_repository import BookRepository
 from app.repositories.cart_repository import CartRepository
-from app.schemas.cart import CartItemCreate, CartItemUpdate
+from app.schemas.cart import CartItemCreate, CartItemUpdate, CartRead
 
 
 class CartService:
@@ -48,7 +48,9 @@ class CartService:
 
     async def get_cart(self, user_id: UUID) -> Cart:
         # Return the user's cart, creating it on first access.
-        return await self._get_or_create_cart(user_id)
+        # Return a plain mapping validated into Pydantic to avoid lazy IO.
+        cart_dict = await self._repo.get_cart_dict(user_id)
+        return CartRead.model_validate(cart_dict)
 
     async def add_item(self, user_id: UUID, data: CartItemCreate) -> Cart:
         # Add a book to the cart, merging quantities when the item already exists.
@@ -60,7 +62,8 @@ class CartService:
             await self._repo.add_item(cart, data.book_id, data.quantity)
         else:
             await self._repo.update_item(existing, existing.quantity + data.quantity)
-        return await self._get_cart(user_id)
+        cart_dict = await self._repo.get_cart_dict(user_id)
+        return CartRead.model_validate(cart_dict)
 
     async def update_item(self, user_id: UUID, item_id: UUID, data: CartItemUpdate) -> Cart:
         # Update the quantity for a specific cart item.
@@ -75,11 +78,13 @@ class CartService:
         update_data = data.model_dump(exclude_unset=True)
         quantity = update_data.get("quantity")
         if quantity is None:
-            return await self._get_cart(user_id)
+            cart_dict = await self._repo.get_cart_dict(user_id)
+            return CartRead.model_validate(cart_dict)
 
         self._validate_quantity(quantity)
         await self._repo.update_item(item, quantity)
-        return await self._get_cart(user_id)
+        cart_dict = await self._repo.get_cart_dict(user_id)
+        return CartRead.model_validate(cart_dict)
 
     async def remove_item(self, user_id: UUID, item_id: UUID) -> Cart:
         # Remove a single cart item.
@@ -92,10 +97,12 @@ class CartService:
             )
 
         await self._repo.delete_item(item)
-        return await self._get_cart(user_id)
+        cart_dict = await self._repo.get_cart_dict(user_id)
+        return CartRead.model_validate(cart_dict)
 
     async def clear_cart(self, user_id: UUID) -> Cart:
         # Remove all items from the user's cart.
         cart = await self._get_or_create_cart(user_id)
         await self._repo.clear_items(cart)
-        return await self._get_cart(user_id)
+        cart_dict = await self._repo.get_cart_dict(user_id)
+        return CartRead.model_validate(cart_dict)
