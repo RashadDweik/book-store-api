@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -88,6 +89,7 @@ async def test_create_book_rejects_missing_authors() -> None:
             BookCreate(
                 title="Book",
                 price=Decimal("10.00"),
+                release_date=date(2024, 1, 1),
                 author_ids=[author_id],
             )
         )
@@ -117,6 +119,7 @@ async def test_create_book_maps_isbn_unique_error() -> None:
             BookCreate(
                 title="Book",
                 price=Decimal("10.00"),
+                release_date=date(2024, 1, 1),
                 author_ids=[author_id],
                 isbn="978-1-4028-9999-1",
             )

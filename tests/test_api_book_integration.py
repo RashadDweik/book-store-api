@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -73,6 +73,7 @@ def build_book(**overrides) -> SimpleNamespace:
         "id": uuid4(),
         "title": "Test Book",
         "price": Decimal("19.99"),
+        "release_date": date(2024, 1, 15),
         "description": "Desc",
         "isbn": "0735235902",
         "stock": 10,
@@ -112,6 +113,7 @@ async def test_list_books_returns_books(app: FastAPI) -> None:
     assert body[0]["id"] == str(book.id)
     assert body[0]["title"] == book.title
     assert str(body[0]["price"]) == str(book.price)
+    assert body[0]["release_date"] == book.release_date.isoformat()
     assert body[0]["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
     assert body[0]["authors"][0]["id"] == str(book.authors[0].id)
 
@@ -131,6 +133,7 @@ async def test_read_book_returns_book(app: FastAPI) -> None:
     body = response.json()
     assert body["id"] == str(book.id)
     assert body["title"] == book.title
+    assert body["release_date"] == book.release_date.isoformat()
     assert body["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
 
 
@@ -144,6 +147,7 @@ async def test_create_book_requires_admin(app: FastAPI) -> None:
             json={
                 "title": "Book",
                 "price": 10.0,
+                "release_date": "2024-01-15",
                 "author_ids": [str(uuid4())],
             },
         )
@@ -165,6 +169,7 @@ async def test_create_book_returns_book(app: FastAPI) -> None:
             json={
                 "title": book.title,
                 "price": float(book.price),
+                "release_date": book.release_date.isoformat(),
                 "author_ids": [str(book.authors[0].id)],
             },
         )

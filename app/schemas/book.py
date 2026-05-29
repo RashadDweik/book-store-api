@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +16,7 @@ def build_openlibrary_cover_url(isbn: str, size: str = "M") -> str:
 class BookBase(SchemaBase):
     title: str
     price: Decimal
+    release_date: date | None = None
     description: str | None = None
     isbn: str | None = None
     stock: int = 0
