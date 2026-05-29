@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -19,6 +20,7 @@ class Book(BaseModel):
 
     title: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     price: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
+    release_date: Mapped[date | None] = mapped_column(nullable=True)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     isbn: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True, index=True)
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
