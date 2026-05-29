@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.repositories.author_repository import AuthorRepository
 from app.repositories.book_repository import BookRepository
+from app.repositories.category_repository import CategoryRepository
 from app.schemas.book import BookCreate, BookUpdate
 from app.services.book_service import BookService
 
@@ -26,7 +27,8 @@ class DummyUniqueViolationError(Exception):
 async def test_list_books_rejects_invalid_price_range() -> None:
     repo = AsyncMock(spec=BookRepository)
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     with pytest.raises(HTTPException) as exc:
         await service.list_books(min_price=Decimal("10"), max_price=Decimal("5"))
@@ -38,7 +40,8 @@ async def test_list_books_rejects_invalid_price_range() -> None:
 async def test_list_books_rejects_invalid_sort() -> None:
     repo = AsyncMock(spec=BookRepository)
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     with pytest.raises(HTTPException) as exc:
         await service.list_books(sort="invalid")
@@ -51,7 +54,8 @@ async def test_list_books_calls_repository() -> None:
     repo = AsyncMock(spec=BookRepository)
     repo.list = AsyncMock(return_value=[SimpleNamespace(id=uuid4())])
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     result = await service.list_books(query="fast", limit=5, offset=10, sort="title")
 
@@ -68,7 +72,8 @@ async def test_get_book_missing_raises() -> None:
     repo = AsyncMock(spec=BookRepository)
     repo.get_by_id = AsyncMock(return_value=None)
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     with pytest.raises(HTTPException) as exc:
         await service.get_book(uuid4())
@@ -81,7 +86,8 @@ async def test_create_book_rejects_missing_authors() -> None:
     repo.create = AsyncMock()
     authors = AsyncMock(spec=AuthorRepository)
     authors.get_by_ids = AsyncMock(return_value=[])
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
     author_id = uuid4()
 
     with pytest.raises(HTTPException) as exc:
@@ -98,11 +104,38 @@ async def test_create_book_rejects_missing_authors() -> None:
     repo.create.assert_not_awaited()
 
 
+async def test_create_book_rejects_missing_category() -> None:
+    repo = AsyncMock(spec=BookRepository)
+    repo.create = AsyncMock()
+    authors = AsyncMock(spec=AuthorRepository)
+    authors.get_by_ids = AsyncMock(return_value=[])
+    categories = AsyncMock(spec=CategoryRepository)
+    categories.get_by_id = AsyncMock(return_value=None)
+    service = BookService(repo, authors, categories)
+    category_id = uuid4()
+
+    with pytest.raises(HTTPException) as exc:
+        await service.create_book(
+            BookCreate(
+                title="Book",
+                price=Decimal("10.00"),
+                release_date=date(2024, 1, 1),
+                category_id=category_id,
+                author_ids=[],
+            )
+        )
+
+    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.detail == "Category not found."
+    repo.create.assert_not_awaited()
+
+
 async def test_create_book_maps_isbn_unique_error() -> None:
     repo = AsyncMock(spec=BookRepository)
     authors = AsyncMock(spec=AuthorRepository)
     author_id = uuid4()
     authors.get_by_ids = AsyncMock(return_value=[SimpleNamespace(id=author_id)])
+    categories = AsyncMock(spec=CategoryRepository)
     integrity_error = IntegrityError(
         "INSERT INTO books (...) VALUES (...)",
         {},
@@ -112,7 +145,7 @@ async def test_create_book_maps_isbn_unique_error() -> None:
         ),
     )
     repo.create = AsyncMock(side_effect=integrity_error)
-    service = BookService(repo, authors)
+    service = BookService(repo, authors, categories)
 
     with pytest.raises(HTTPException) as exc:
         await service.create_book(
@@ -135,7 +168,8 @@ async def test_update_book_returns_existing_when_no_changes() -> None:
     repo.get_by_id = AsyncMock(return_value=book)
     repo.update = AsyncMock()
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     result = await service.update_book(book.id, BookUpdate())
 
@@ -152,7 +186,8 @@ async def test_update_book_replaces_authors() -> None:
     authors = AsyncMock(spec=AuthorRepository)
     author = SimpleNamespace(id=uuid4())
     authors.get_by_ids = AsyncMock(return_value=[author])
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     result = await service.update_book(book.id, BookUpdate(author_ids=[author.id]))
 
@@ -166,7 +201,8 @@ async def test_delete_book_calls_repository() -> None:
     repo.get_by_id = AsyncMock(return_value=book)
     repo.delete = AsyncMock()
     authors = AsyncMock(spec=AuthorRepository)
-    service = BookService(repo, authors)
+    categories = AsyncMock(spec=CategoryRepository)
+    service = BookService(repo, authors, categories)
 
     await service.delete_book(book.id)
 
