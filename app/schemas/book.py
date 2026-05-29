@@ -6,6 +6,7 @@ from pydantic import computed_field
 
 from .author import AuthorSummary
 from .base import SchemaBase
+from .category import CategorySummary
 
 
 def build_openlibrary_cover_url(isbn: str, size: str = "M") -> str:
@@ -17,6 +18,7 @@ class BookBase(SchemaBase):
     title: str
     price: Decimal
     release_date: date | None = None
+    category_id: UUID | None = None
     description: str | None = None
     isbn: str | None = None
     stock: int = 0
@@ -29,6 +31,8 @@ class BookCreate(BookBase):
 class BookUpdate(SchemaBase):
     title: str | None = None
     price: Decimal | None = None
+    release_date: date | None = None
+    category_id: UUID | None = None
     description: str | None = None
     isbn: str | None = None
     stock: int | None = None
@@ -39,6 +43,7 @@ class BookRead(BookBase):
     id: UUID
     created_at: datetime
     authors: list[AuthorSummary] = []
+    category: CategorySummary | None = None
 
     @computed_field
     @property

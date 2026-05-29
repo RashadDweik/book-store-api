@@ -17,7 +17,7 @@ class BookRepository:
         self._db = db
 
     def _base_select(self):
-        return select(Book).options(selectinload(Book.authors))
+        return select(Book).options(selectinload(Book.authors), selectinload(Book.category))
 
     async def get_by_id(self, book_id: UUID) -> Book | None:
         # Retrieve a book by UUID, returning None when missing.
@@ -29,6 +29,7 @@ class BookRepository:
         *,
         query: str | None = None,
         author_id: UUID | None = None,
+        category_id: UUID | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
         in_stock: bool | None = None,
@@ -43,6 +44,8 @@ class BookRepository:
             stmt = stmt.where(or_(Book.title.ilike(pattern), Book.isbn.ilike(pattern)))
         if author_id is not None:
             stmt = stmt.where(Book.authors.any(Author.id == author_id))
+        if category_id is not None:
+            stmt = stmt.where(Book.category_id == category_id)
         if min_price is not None:
             stmt = stmt.where(Book.price >= min_price)
         if max_price is not None:

@@ -69,16 +69,19 @@ class StubBookService:
 
 def build_book(**overrides) -> SimpleNamespace:
     author = SimpleNamespace(id=uuid4(), name="Author")
+    category = SimpleNamespace(id=uuid4(), name="Fiction")
     payload = {
         "id": uuid4(),
         "title": "Test Book",
         "price": Decimal("19.99"),
         "release_date": date(2024, 1, 15),
+        "category_id": category.id,
         "description": "Desc",
         "isbn": "0735235902",
         "stock": 10,
         "created_at": datetime(2024, 1, 1, tzinfo=timezone.utc),
         "authors": [author],
+        "category": category,
     }
     payload.update(overrides)
     return SimpleNamespace(**payload)
@@ -114,6 +117,8 @@ async def test_list_books_returns_books(app: FastAPI) -> None:
     assert body[0]["title"] == book.title
     assert str(body[0]["price"]) == str(book.price)
     assert body[0]["release_date"] == book.release_date.isoformat()
+    assert body[0]["category_id"] == str(book.category_id)
+    assert body[0]["category"]["id"] == str(book.category.id)
     assert body[0]["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
     assert body[0]["authors"][0]["id"] == str(book.authors[0].id)
 
@@ -134,6 +139,7 @@ async def test_read_book_returns_book(app: FastAPI) -> None:
     assert body["id"] == str(book.id)
     assert body["title"] == book.title
     assert body["release_date"] == book.release_date.isoformat()
+    assert body["category"]["name"] == book.category.name
     assert body["cover_url"] == "https://covers.openlibrary.org/b/isbn/0735235902-M.jpg"
 
 
@@ -148,6 +154,7 @@ async def test_create_book_requires_admin(app: FastAPI) -> None:
                 "title": "Book",
                 "price": 10.0,
                 "release_date": "2024-01-15",
+                "category_id": str(uuid4()),
                 "author_ids": [str(uuid4())],
             },
         )
@@ -170,6 +177,7 @@ async def test_create_book_returns_book(app: FastAPI) -> None:
                 "title": book.title,
                 "price": float(book.price),
                 "release_date": book.release_date.isoformat(),
+                "category_id": str(book.category_id),
                 "author_ids": [str(book.authors[0].id)],
             },
         )

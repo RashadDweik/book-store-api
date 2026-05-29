@@ -10,6 +10,7 @@ from app.core.database import get_db
 from app.core.dependencies import require_admin
 from app.repositories.author_repository import AuthorRepository
 from app.repositories.book_repository import BookRepository
+from app.repositories.category_repository import CategoryRepository
 from app.schemas.book import BookCreate, BookRead, BookUpdate
 from app.services.book_service import BookService
 
@@ -20,13 +21,14 @@ router = APIRouter(prefix="/books", tags=["Books"])
 
 def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
     # Build a service with the request-scoped database session.
-    return BookService(BookRepository(db), AuthorRepository(db))
+    return BookService(BookRepository(db), AuthorRepository(db), CategoryRepository(db))
 
 
 @router.get("", response_model=list[BookRead])
 async def list_books(
     q: str | None = Query(None, min_length=1, max_length=200),
     author_id: UUID | None = Query(None),
+    category_id: UUID | None = Query(None),
     min_price: Decimal | None = Query(None, ge=0),
     max_price: Decimal | None = Query(None, ge=0),
     in_stock: bool | None = Query(None),
@@ -42,6 +44,7 @@ async def list_books(
     return await service.list_books(
         query=q,
         author_id=author_id,
+        category_id=category_id,
         min_price=min_price,
         max_price=max_price,
         in_stock=in_stock,

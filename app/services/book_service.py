@@ -9,14 +9,21 @@ from sqlalchemy.exc import IntegrityError
 from app.models.book import Book
 from app.repositories.author_repository import AuthorRepository
 from app.repositories.book_repository import BookRepository
+from app.repositories.category_repository import CategoryRepository
 from app.schemas.book import BookCreate, BookUpdate
 
 
 class BookService:
-    def __init__(self, repo: BookRepository, authors: AuthorRepository) -> None:
+    def __init__(
+        self,
+        repo: BookRepository,
+        authors: AuthorRepository,
+        categories: CategoryRepository,
+    ) -> None:
         # Store repositories used for persistence and lookups.
         self._repo = repo
         self._authors = authors
+        self._categories = categories
 
     @staticmethod
     def _is_isbn_unique_violation(error: IntegrityError) -> bool:
@@ -70,6 +77,16 @@ class BookService:
             )
         return authors
 
+    async def _resolve_category(self, category_id: UUID | None) -> None:
+        if category_id is None:
+            return
+        category = await self._categories.get_by_id(category_id)
+        if category is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Category not found.",
+            )
+
     @staticmethod
     def _validate_price_range(
         min_price: Decimal | None,
@@ -86,6 +103,7 @@ class BookService:
         *,
         query: str | None = None,
         author_id: UUID | None = None,
+        category_id: UUID | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
         in_stock: bool | None = None,
@@ -99,6 +117,7 @@ class BookService:
         return await self._repo.list(
             query=query,
             author_id=author_id,
+            category_id=category_id,
             min_price=min_price,
             max_price=max_price,
             in_stock=in_stock,
@@ -120,6 +139,7 @@ class BookService:
     async def create_book(self, data: BookCreate) -> Book:
         # Create a book with authors and enforce ISBN uniqueness.
         authors = await self._resolve_authors(data.author_ids)
+        await self._resolve_category(data.category_id)
         payload = data.model_dump()
         payload.pop("author_ids", None)
         try:
@@ -148,6 +168,7 @@ class BookService:
         authors = None
         if author_ids is not None:
             authors = await self._resolve_authors(author_ids)
+        await self._resolve_category(update_data.get("category_id"))
 
         if not update_data and authors is None:
             return book

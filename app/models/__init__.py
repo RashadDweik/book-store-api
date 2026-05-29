@@ -2,6 +2,7 @@ from .author import Author
 from .auth_audit_log import AuthAuditLog
 from .base import Base, BaseModel, TimestampMixin
 from .book import Book
+from .category import Category
 from .cart import Cart, CartItem
 from .order import Order, OrderItem
 from .role import Role
@@ -15,6 +16,7 @@ __all__ = [
 	"Base",
 	"BaseModel",
 	"Book",
+	"Category",
 	"Cart",
 	"CartItem",
 	"Order",
