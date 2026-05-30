@@ -39,7 +39,9 @@ async def test_add_item_uses_authenticated_user_cart_only() -> None:
     repo.get_item_by_book = AsyncMock(return_value=None)
     repo.add_item = AsyncMock()
     books = AsyncMock(spec=BookRepository)
-    books.get_by_id = AsyncMock(return_value=Book(title="Book", price=Decimal("10.00"), stock=1))
+    books.get_by_id = AsyncMock(
+        return_value=Book(title="Book", price=Decimal("10.00"), stock=1)
+    )
     service = CartService(repo, books)
 
     await service.add_item(
@@ -78,7 +80,6 @@ async def test_add_item_increments_existing_quantity() -> None:
     repo.get_item_by_book = AsyncMock(return_value=existing)
     repo.update_item = AsyncMock(return_value=existing)
     books = AsyncMock(spec=BookRepository)
-    books.get_by_id = AsyncMock(return_value=Book(title="Book", price=Decimal("10.00"), stock=1))
     service = CartService(repo, books)
 
     result = await service.add_item(user_id, CartItemCreate(book_id=book_id, quantity=3))
@@ -119,7 +120,7 @@ async def test_update_item_rejects_invalid_quantity() -> None:
 async def test_remove_item_calls_repository() -> None:
     repo = AsyncMock(spec=CartRepository)
     cart = SimpleNamespace(id=uuid4())
-    item = SimpleNamespace(id=uuid4())
+    item = SimpleNamespace(id=uuid4(), book_id=uuid4(), quantity=1)
     repo.get_by_user_id = AsyncMock(return_value=cart)
     repo.get_item_by_id = AsyncMock(return_value=item)
     repo.delete_item = AsyncMock()

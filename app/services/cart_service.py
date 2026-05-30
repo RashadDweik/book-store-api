@@ -4,7 +4,6 @@ from uuid import UUID
 
 from fastapi import HTTPException, status
 
-from app.models.book import Book
 from app.models.cart import Cart
 from app.repositories.book_repository import BookRepository
 from app.repositories.cart_repository import CartRepository
@@ -37,15 +36,6 @@ class CartService:
                 detail="Quantity must be at least 1.",
             )
 
-    async def _ensure_book_exists(self, book_id: UUID) -> Book:
-        book = await self._books.get_by_id(book_id)
-        if book is None:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Book not found.",
-            )
-        return book
-
     async def get_cart(self, user_id: UUID) -> Cart:
         # Return the user's cart, creating it on first access.
         return await self._get_or_create_cart(user_id)
@@ -53,7 +43,12 @@ class CartService:
     async def add_item(self, user_id: UUID, data: CartItemCreate) -> Cart:
         # Add a book to the cart, merging quantities when the item already exists.
         self._validate_quantity(data.quantity)
-        await self._ensure_book_exists(data.book_id)
+        book = await self._books.get_by_id(data.book_id)
+        if book is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Book not found.",
+            )
         cart = await self._get_or_create_cart(user_id)
         existing = await self._repo.get_item_by_book(cart.id, data.book_id)
         if existing is None:
