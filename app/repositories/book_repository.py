@@ -24,6 +24,12 @@ class BookRepository:
         result = await self._db.execute(self._base_select().where(Book.id == book_id))
         return result.scalar_one_or_none()
 
+    async def get_by_id_for_update(self, book_id: UUID) -> Book | None:
+        # Retrieve a book by UUID and lock the row for the current transaction.
+        stmt = self._base_select().where(Book.id == book_id).with_for_update()
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list(
         self,
         *,

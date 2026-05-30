@@ -1,12 +1,16 @@
 """Book catalog routes."""
 
+from contextlib import suppress
 from decimal import Decimal
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.inventory_cache import InventoryCache
+from app.core.realtime import WebSocketHub
 from app.core.database import get_db
 from app.core.dependencies import require_admin
 from app.repositories.author_repository import AuthorRepository
@@ -25,8 +29,61 @@ def get_book_service(db: AsyncSession = Depends(get_db)) -> BookService:
     return BookService(BookRepository(db), AuthorRepository(db), CategoryRepository(db))
 
 
+def _get_inventory_cache(request: Request) -> InventoryCache | None:
+    return getattr(request.app.state, "inventory_cache", None)
+
+
+def _get_websocket_hub(request: Request) -> WebSocketHub | None:
+    return getattr(request.app.state, "websocket_hub", None)
+
+
+async def _hydrate_book_stock(request: Request, books) -> None:
+    cache = _get_inventory_cache(request)
+    if cache is None:
+        return
+    with suppress(RedisError):
+        if isinstance(books, list):
+            await cache.hydrate_books(books)
+        else:
+            await cache.hydrate_book(books)
+
+
+async def _store_book_stock(request: Request, book) -> None:
+    cache = _get_inventory_cache(request)
+    if cache is not None:
+        with suppress(RedisError):
+            await cache.set_stock(book.id, book.stock)
+
+    hub = _get_websocket_hub(request)
+    if hub is not None:
+        await hub.broadcast(
+            {
+                "type": "book.stock.updated",
+                "book_id": str(book.id),
+                "stock": book.stock,
+            }
+        )
+
+
+async def _delete_book_stock(request: Request, book_id: UUID) -> None:
+    cache = _get_inventory_cache(request)
+    if cache is not None:
+        with suppress(RedisError):
+            await cache.delete_stock(book_id)
+
+    hub = _get_websocket_hub(request)
+    if hub is not None:
+        await hub.broadcast(
+            {
+                "type": "book.stock.deleted",
+                "book_id": str(book_id),
+            }
+        )
+
+
 @router.get("", response_model=list[BookRead])
 async def list_books(
+    request: Request,
     q: str | None = Query(None, min_length=1, max_length=200),
     author_id: UUID | None = Query(None),
     category_id: UUID | None = Query(None),
@@ -44,7 +101,7 @@ async def list_books(
     service: BookService = Depends(get_book_service),
 ) -> list[BookRead]:
     # Return a filtered list of books.
-    return await service.list_books(
+    books = await service.list_books(
         query=q,
         author_id=author_id,
         category_id=category_id,
@@ -57,15 +114,20 @@ async def list_books(
         offset=offset,
         sort=sort,
     )
+    await _hydrate_book_stock(request, books)
+    return books
 
 
 @router.get("/{book_id}", response_model=BookRead)
 async def read_book(
     book_id: UUID,
+    request: Request,
     service: BookService = Depends(get_book_service),
 ) -> BookRead:
     # Return details for a single book.
-    return await service.get_book(book_id)
+    book = await service.get_book(book_id)
+    await _hydrate_book_stock(request, book)
+    return book
 
 
 @router.post(
@@ -76,10 +138,13 @@ async def read_book(
 )
 async def create_book(
     data: BookCreate,
+    request: Request,
     service: BookService = Depends(get_book_service),
 ) -> BookRead:
     # Create a new book entry.
-    return await service.create_book(data)
+    book = await service.create_book(data)
+    await _store_book_stock(request, book)
+    return book
 
 
 @router.patch(
@@ -90,10 +155,13 @@ async def create_book(
 async def update_book(
     book_id: UUID,
     data: BookUpdate,
+    request: Request,
     service: BookService = Depends(get_book_service),
 ) -> BookRead:
     # Update a book entry.
-    return await service.update_book(book_id, data)
+    book = await service.update_book(book_id, data)
+    await _store_book_stock(request, book)
+    return book
 
 
 @router.delete(
@@ -103,8 +171,10 @@ async def update_book(
 )
 async def delete_book(
     book_id: UUID,
+    request: Request,
     service: BookService = Depends(get_book_service),
 ) -> None:
     # Delete a book entry.
     await service.delete_book(book_id)
+    await _delete_book_stock(request, book_id)
     return None

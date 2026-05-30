@@ -15,9 +15,12 @@ from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoin
 from starlette.responses import Response
 
 from app.api.v1.router import api_router
+from app.api.v1.routers import realtime as realtime_router
 from app.core.config import Settings, get_settings
+from app.core.inventory_cache import build_inventory_cache
 from app.core.limiter import limiter
 from app.core.refresh_token_store import build_refresh_token_store
+from app.core.realtime import WebSocketHub
 
 
 # Configure structured logging once at import time.
@@ -70,6 +73,9 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("app.startup", service=settings.APP_NAME)
         yield
+        inventory_cache = getattr(app.state, "inventory_cache", None)
+        if inventory_cache is not None:
+            await inventory_cache.close()
         refresh_store = getattr(app.state, "refresh_token_store", None)
         if refresh_store is not None:
             await refresh_store.close()
@@ -85,14 +91,39 @@ def create_app() -> FastAPI:
     # Store shared objects on app.state for later use.
     app.state.settings = settings
     app.state.limiter = limiter
+    app.state.inventory_cache = build_inventory_cache(settings)
     app.state.refresh_token_store = build_refresh_token_store(settings)
+    app.state.websocket_hub = WebSocketHub()
 
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(RequestTimingMiddleware)
+    # Normalize ALLOWED_ORIGINS to a list in case it was provided as a
+    # JSON string or comma-separated env value. This prevents CORS from
+    # rejecting websocket handshakes when the origin check fails.
+    allow_origins = settings.ALLOWED_ORIGINS
+    if isinstance(allow_origins, str):
+        try:
+            import json
+
+            parsed = json.loads(allow_origins)
+            if isinstance(parsed, list):
+                allow_origins = parsed
+            else:
+                # backstop to comma-split strings
+                allow_origins = [s.strip() for s in allow_origins.split(",") if s.strip()]
+        except Exception:
+            allow_origins = [s.strip() for s in allow_origins.split(",") if s.strip()]
+
+    logger.info("cors.config", allowed_origins=allow_origins)
+
+    # When origins are a wildcard list, allow websocket handshakes by
+    # providing an origin regex that matches any origin. This avoids
+    # subtle handshake rejections in some ASGI servers.
+
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=settings.ALLOWED_ORIGINS,
+        allow_origins=allow_origins,
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -103,6 +134,7 @@ def create_app() -> FastAPI:
         return {"status": "ok", "service": settings.APP_NAME}
 
     app.include_router(api_router, prefix="/api/v1")
+    app.include_router(realtime_router.router)
 
     return app
 
