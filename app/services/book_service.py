@@ -2,6 +2,7 @@
 
 from decimal import Decimal
 from uuid import UUID
+from datetime import date
 
 from fastapi import HTTPException, status
 from sqlalchemy.exc import IntegrityError
@@ -98,6 +99,21 @@ class BookService:
                 detail="min_price cannot be greater than max_price.",
             )
 
+    @staticmethod
+    def _validate_release_date_range(
+        min_release_date: date | None,
+        max_release_date: date | None,
+    ) -> None:
+        if (
+            min_release_date is not None
+            and max_release_date is not None
+            and min_release_date > max_release_date
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="min_release_date cannot be greater than max_release_date.",
+            )
+
     async def list_books(
         self,
         *,
@@ -106,6 +122,8 @@ class BookService:
         category_id: UUID | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
+        min_release_date: date | None = None,
+        max_release_date: date | None = None,
         in_stock: bool | None = None,
         limit: int = 20,
         offset: int = 0,
@@ -113,6 +131,7 @@ class BookService:
     ) -> list[Book]:
         # Validate filters and return the paged book list.
         self._validate_price_range(min_price, max_price)
+        self._validate_release_date_range(min_release_date, max_release_date)
         order_by = self._resolve_sort(sort)
         return await self._repo.list(
             query=query,
@@ -120,6 +139,8 @@ class BookService:
             category_id=category_id,
             min_price=min_price,
             max_price=max_price,
+            min_release_date=min_release_date,
+            max_release_date=max_release_date,
             in_stock=in_stock,
             limit=limit,
             offset=offset,
