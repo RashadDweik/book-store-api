@@ -1,6 +1,7 @@
 """Book catalog routes."""
 
 from decimal import Decimal
+from datetime import date
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, status
@@ -31,6 +32,8 @@ async def list_books(
     category_id: UUID | None = Query(None),
     min_price: Decimal | None = Query(None, ge=0),
     max_price: Decimal | None = Query(None, ge=0),
+    min_release_date: date | None = Query(None, description="Earliest release date to include"),
+    max_release_date: date | None = Query(None, description="Latest release date to include"),
     in_stock: bool | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
@@ -47,6 +50,8 @@ async def list_books(
         category_id=category_id,
         min_price=min_price,
         max_price=max_price,
+        min_release_date=min_release_date,
+        max_release_date=max_release_date,
         in_stock=in_stock,
         limit=limit,
         offset=offset,

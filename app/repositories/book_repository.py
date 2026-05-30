@@ -32,6 +32,8 @@ class BookRepository:
         category_id: UUID | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
+        min_release_date: "date" | None = None,
+        max_release_date: "date" | None = None,
         in_stock: bool | None = None,
         limit: int = 20,
         offset: int = 0,
@@ -50,6 +52,10 @@ class BookRepository:
             stmt = stmt.where(Book.price >= min_price)
         if max_price is not None:
             stmt = stmt.where(Book.price <= max_price)
+        if min_release_date is not None:
+            stmt = stmt.where(Book.release_date >= min_release_date)
+        if max_release_date is not None:
+            stmt = stmt.where(Book.release_date <= max_release_date)
         if in_stock is True:
             stmt = stmt.where(Book.stock > 0)
         elif in_stock is False:
