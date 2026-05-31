@@ -27,8 +27,8 @@ class CartRepository:
         cart = Cart(user_id=user_id)
         self._db.add(cart)
         await self._db.flush()
-        await self._db.refresh(cart)
-        return cart
+        result = await self._db.execute(self._base_select().where(Cart.id == cart.id))
+        return result.scalar_one()
 
     async def get_item_by_id(self, cart_id: UUID, item_id: UUID) -> CartItem | None:
         # Retrieve a cart item by id within the given cart.
