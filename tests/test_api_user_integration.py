@@ -385,12 +385,8 @@ async def test_refresh_rejects_access_token(app: FastAPI) -> None:
         access_token = login_response.json()["access_token"]
 
         # Act: attempt to refresh using an access token.
-        client.cookies.set(
-            auth_router.settings.REFRESH_COOKIE_NAME,
-            access_token,
-            domain="test",
-            path=auth_router.settings.REFRESH_COOKIE_PATH,
-        )
+        client.cookies.clear()
+        client.cookies.set(auth_router.settings.REFRESH_COOKIE_NAME, access_token)
         refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: access tokens are not accepted at the refresh endpoint.
@@ -410,12 +406,7 @@ async def test_refresh_returns_503_when_refresh_store_unavailable(app: FastAPI) 
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        client.cookies.set(
-            auth_router.settings.REFRESH_COOKIE_NAME,
-            refresh_token,
-            domain="test",
-            path=auth_router.settings.REFRESH_COOKIE_PATH,
-        )
+        client.cookies.set(auth_router.settings.REFRESH_COOKIE_NAME, refresh_token)
         # Act: attempt to refresh.
         response = await client.post("/api/v1/auth/refresh")
 
@@ -496,12 +487,7 @@ async def test_logout_returns_503_when_refresh_store_unavailable(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        client.cookies.set(
-            auth_router.settings.REFRESH_COOKIE_NAME,
-            refresh_token,
-            domain="test",
-            path=auth_router.settings.REFRESH_COOKIE_PATH,
-        )
+        client.cookies.set(auth_router.settings.REFRESH_COOKIE_NAME, refresh_token)
         response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
