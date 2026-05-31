@@ -14,25 +14,24 @@ class Settings(BaseSettings):
     APP_VERSION: str = "0.1.0"
     APP_DESCRIPTION: str = "FastAPI book store API"
     DEBUG: bool = False
+
     DATABASE_URL: str
     SECRET_KEY: str
-    ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
-    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+    ALGORITHM: str
+    ACCESS_TOKEN_EXPIRE_MINUTES: int
+    REFRESH_TOKEN_EXPIRE_DAYS: int
     # Refresh-cookie settings are kept in config so local dev and production can
     # use different browser-safe cookie flags without code changes.
-    REFRESH_COOKIE_NAME: str = "refresh_token"
-    REFRESH_COOKIE_SECURE: bool = False
-    REFRESH_COOKIE_SAMESITE: str = "lax"
-    REFRESH_COOKIE_PATH: str = "/api/v1/auth"
+    REFRESH_COOKIE_NAME: str
+    REFRESH_COOKIE_SECURE: bool
+    REFRESH_COOKIE_SAMESITE: str
+    REFRESH_COOKIE_PATH: str
     REFRESH_COOKIE_DOMAIN: str | None = None
-    REDIS_URL: str = "redis://localhost:6379"
+    REDIS_URL: str
     REFRESH_TOKEN_REDIS_URL: str = "redis://localhost:6381"
     REDIS_REFRESH_PASSWORD: str | None = None
-    RATE_LIMIT_STORAGE_URI: str = "redis://localhost:6380"
+    RATE_LIMIT_STORAGE_URI: str
     SENTRY_DSN: str = ""
-    # Credentialed browser requests must use an explicit origin; wildcard CORS
-    # breaks when the frontend sends cookies.
     ALLOWED_ORIGINS: list[str] = ["*"]
 
     # Load from .env during local development and ignore unknown variables.
