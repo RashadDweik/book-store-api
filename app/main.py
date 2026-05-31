@@ -98,9 +98,8 @@ def create_app() -> FastAPI:
     app.add_middleware(SlowAPIMiddleware)
     app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
     app.add_middleware(RequestTimingMiddleware)
-    # Normalize ALLOWED_ORIGINS to a list in case it was provided as a
-    # JSON string or comma-separated env value. This prevents CORS from
-    # rejecting websocket handshakes when the origin check fails.
+    # Normalize ALLOWED_ORIGINS to a list in case it was provided as a JSON
+    # string or comma-separated env value.
     allow_origins = settings.ALLOWED_ORIGINS
     if isinstance(allow_origins, str):
         try:
@@ -117,9 +116,9 @@ def create_app() -> FastAPI:
 
     logger.info("cors.config", allowed_origins=allow_origins)
 
-    # When origins are a wildcard list, allow websocket handshakes by
-    # providing an origin regex that matches any origin. This avoids
-    # subtle handshake rejections in some ASGI servers.
+    # Do not use a wildcard origin when credentials are enabled. Browser
+    # requests that include cookies require the backend to echo an explicit
+    # frontend origin instead of "*".
 
     app.add_middleware(
         CORSMiddleware,

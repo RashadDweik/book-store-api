@@ -4,7 +4,7 @@ from datetime import timedelta
 import hashlib
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordRequestForm
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ from app.core.refresh_token_store import RefreshTokenStore, build_refresh_token_
 from app.core.security import create_access_token, create_refresh_token, decode_token
 from app.repositories.role_repository import RoleRepository
 from app.repositories.user_repository import UserRepository
-from app.schemas.user import LogoutRequest, RefreshRequest, TokenResponse, UserCreate, UserResponse
+from app.schemas.user import TokenResponse, UserCreate, UserResponse
 from app.services.auth_audit_log_service import AuthAuditLogService
 from app.services.user_service import UserService
 
@@ -24,6 +24,57 @@ from app.services.user_service import UserService
 # Group authentication endpoints under the /auth prefix.
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 settings = get_settings()
+
+
+def _refresh_cookie_options() -> dict[str, str | bool | int | None]:
+    max_age = settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+    # Keep the refresh token in an HttpOnly cookie so the browser stores it,
+    # but frontend JavaScript cannot read or overwrite it.
+    return {
+        "key": settings.REFRESH_COOKIE_NAME,
+        "httponly": True,
+        "secure": settings.REFRESH_COOKIE_SECURE,
+        "samesite": settings.REFRESH_COOKIE_SAMESITE,
+        "max_age": max_age,
+        "path": settings.REFRESH_COOKIE_PATH,
+        "domain": settings.REFRESH_COOKIE_DOMAIN,
+    }
+
+
+def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
+    options = _refresh_cookie_options()
+    response.set_cookie(
+        key=str(options["key"]),
+        value=refresh_token,
+        httponly=bool(options["httponly"]),
+        secure=bool(options["secure"]),
+        samesite=str(options["samesite"]),
+        max_age=int(options["max_age"]),
+        path=str(options["path"]),
+        domain=options["domain"],
+    )
+
+
+def _delete_refresh_cookie(response: Response) -> None:
+    options = _refresh_cookie_options()
+    response.delete_cookie(
+        key=str(options["key"]),
+        path=str(options["path"]),
+        domain=options["domain"],
+    )
+
+
+def _resolve_refresh_token(request: Request) -> str:
+    # Cookie-only auth keeps the browser as the token holder and avoids exposing
+    # refresh tokens to frontend JavaScript.
+    cookie_token = request.cookies.get(settings.REFRESH_COOKIE_NAME)
+    if cookie_token:
+        return cookie_token
+    raise HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Token is invalid or expired.",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def get_user_service(db: AsyncSession = Depends(get_db)) -> UserService:
@@ -96,6 +147,7 @@ async def register_user(
 @limiter.limit("5/minute")
 async def login_user(
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
     form_data: OAuth2PasswordRequestForm = Depends(),
     service: UserService = Depends(get_user_service),
@@ -127,16 +179,21 @@ async def login_user(
         user_agent=_get_user_agent(request),
         refresh_token_hash=_hash_refresh_token(refresh_token),
     )
-    return TokenResponse(access_token=access_token, refresh_token=refresh_token)
+    # Return the access token in JSON for the frontend, but store the refresh
+    # token in a cookie so browser sessions can survive reloads and restarts.
+    _set_refresh_cookie(response, refresh_token)
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/refresh", response_model=TokenResponse)
 async def refresh_access_token(
-    payload: RefreshRequest,
+    request: Request,
+    response: Response,
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
 ) -> TokenResponse:
     # Validate refresh token and issue a new access token.
-    token_payload = decode_token(payload.refresh_token)
+    refresh_token = _resolve_refresh_token(request)
+    token_payload = decode_token(refresh_token)
     subject = token_payload.get("sub")
     if not subject or token_payload.get("type") != "refresh":
         raise HTTPException(
@@ -147,7 +204,7 @@ async def refresh_access_token(
 
     # Ensure the refresh token exists in storage and matches the subject.
     try:
-        stored_subject = await refresh_store.get_subject(payload.refresh_token)
+        stored_subject = await refresh_store.get_subject(refresh_token)
     except RedisError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -174,7 +231,7 @@ async def refresh_access_token(
         ) from exc
 
     try:
-        await refresh_store.revoke(payload.refresh_token)
+        await refresh_store.revoke(refresh_token)
     except RedisError as exc:
         try:
             await refresh_store.revoke(new_refresh_token)
@@ -186,19 +243,23 @@ async def refresh_access_token(
         ) from exc
 
     access_token = create_access_token(str(subject))
-    return TokenResponse(access_token=access_token, refresh_token=new_refresh_token)
+    # Rotate the cookie whenever we rotate the refresh token to keep browser and
+    # server-side state aligned.
+    _set_refresh_cookie(response, new_refresh_token)
+    return TokenResponse(access_token=access_token)
 
 
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 async def logout_user(
     request: Request,
+    response: Response,
     background_tasks: BackgroundTasks,
-    payload: LogoutRequest,
     refresh_store: RefreshTokenStore = Depends(get_refresh_token_store),
     audit: AuthAuditLogService = Depends(get_auth_audit_log_service),
 ) -> None:
     # Validate refresh token and revoke it to end the session.
-    token_payload = decode_token(payload.refresh_token)
+    refresh_token = _resolve_refresh_token(request)
+    token_payload = decode_token(refresh_token)
     subject = token_payload.get("sub")
     if not subject or token_payload.get("type") != "refresh":
         raise HTTPException(
@@ -208,7 +269,7 @@ async def logout_user(
         )
 
     try:
-        await refresh_store.revoke(payload.refresh_token)
+        await refresh_store.revoke(refresh_token)
     except RedisError as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -226,7 +287,10 @@ async def logout_user(
         event="logout",
         ip_address=_get_request_ip(request),
         user_agent=_get_user_agent(request),
-        refresh_token_hash=_hash_refresh_token(payload.refresh_token),
+        refresh_token_hash=_hash_refresh_token(refresh_token),
     )
 
+    # Clear the browser cookie so a logged-out tab cannot keep reusing the old
+    # refresh token after the server-side revocation completes.
+    _delete_refresh_cookie(response)
     return None
