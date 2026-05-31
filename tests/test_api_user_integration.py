@@ -218,12 +218,16 @@ async def test_login_returns_tokens(app: FastAPI, audit_service_stub: StubAuthAu
     body = response.json()
     assert body["token_type"] == "bearer"
     assert body["access_token"]
-    assert body["refresh_token"]
+    assert "refresh_token" not in body
+
+    refresh_cookie = response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+    assert refresh_cookie
+    assert "HttpOnly" in response.headers.get("set-cookie", "")
 
     assert len(audit_service_stub.calls) == 1
     assert audit_service_stub.calls[0]["event"] == "login"
     assert audit_service_stub.calls[0]["user_id"] == user.id
-    expected_hash = hashlib.sha256(body["refresh_token"].encode("utf-8")).hexdigest()
+    expected_hash = hashlib.sha256(refresh_cookie.encode("utf-8")).hexdigest()
     assert audit_service_stub.calls[0]["refresh_token_hash"] == expected_hash
 
 
@@ -246,8 +250,9 @@ async def test_login_stores_refresh_token(
             data={"username": "user@example.com", "password": "Password1"},
         )
 
-    # Assert: refresh token is stored for the issuing subject.
-    refresh_token = response.json()["refresh_token"]
+    # Assert: refresh token cookie is stored for the issuing subject.
+    refresh_token = response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+    assert refresh_token
     stored_subject = await refresh_token_store.get_subject(refresh_token)
     assert stored_subject == str(user.id)
 
@@ -270,21 +275,22 @@ async def test_refresh_issues_new_access_token(
             "/api/v1/auth/login",
             data={"username": "user@example.com", "password": "Password1"},
         )
-        refresh_token = login_response.json()["refresh_token"]
+        refresh_token = login_response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+        assert refresh_token
 
         refresh_response = await client.post(
             "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
         )
 
     # Assert: access token is re-issued and refresh token is rotated.
     assert refresh_response.status_code == 200
     body = refresh_response.json()
     assert body["access_token"]
-    assert body["refresh_token"]
-    assert body["refresh_token"] != refresh_token
+    assert "refresh_token" not in body
 
-    rotated_refresh_token = body["refresh_token"]
+    rotated_refresh_token = refresh_response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+    assert rotated_refresh_token
+    assert rotated_refresh_token != refresh_token
     assert await refresh_token_store.get_subject(rotated_refresh_token) == str(user.id)
     assert await refresh_token_store.get_subject(refresh_token) is None
 
@@ -299,11 +305,14 @@ async def test_refresh_rejects_unknown_refresh_token(app: FastAPI) -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        # Act: attempt to refresh with an unknown token.
-        refresh_response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            refresh_token,
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        # Act: attempt to refresh with an unknown token.
+        refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: refresh tokens must exist in storage.
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -376,10 +385,13 @@ async def test_refresh_rejects_access_token(app: FastAPI) -> None:
         access_token = login_response.json()["access_token"]
 
         # Act: attempt to refresh using an access token.
-        refresh_response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": access_token},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            access_token,
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: access tokens are not accepted at the refresh endpoint.
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -398,11 +410,14 @@ async def test_refresh_returns_503_when_refresh_store_unavailable(app: FastAPI) 
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        # Act: attempt to refresh.
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            refresh_token,
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        # Act: attempt to refresh.
+        response = await client.post("/api/v1/auth/refresh")
 
     # Assert: refresh reports the refresh store failure.
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
@@ -428,17 +443,12 @@ async def test_logout_revokes_refresh_token(
             "/api/v1/auth/login",
             data={"username": "user@example.com", "password": "Password1"},
         )
-        refresh_token = login_response.json()["refresh_token"]
+        refresh_token = login_response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+        assert refresh_token
 
         # Act: logout and then attempt to refresh again.
-        logout_response = await client.post(
-            "/api/v1/auth/logout",
-            json={"refresh_token": refresh_token},
-        )
-        refresh_response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
-        )
+        logout_response = await client.post("/api/v1/auth/logout")
+        refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: logout succeeds and refresh token is no longer valid.
     assert logout_response.status_code == status.HTTP_204_NO_CONTENT
@@ -459,10 +469,13 @@ async def test_logout_rejects_invalid_token(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        response = await client.post(
-            "/api/v1/auth/logout",
-            json={"refresh_token": "not-a-token"},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            "not-a-token",
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
     assert audit_service_stub.calls == []
@@ -483,10 +496,13 @@ async def test_logout_returns_503_when_refresh_store_unavailable(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        response = await client.post(
-            "/api/v1/auth/logout",
-            json={"refresh_token": refresh_token},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            refresh_token,
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        response = await client.post("/api/v1/auth/logout")
 
     assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
     assert response.json()["detail"] == "Refresh token store is unavailable. Try again later."
@@ -510,14 +526,12 @@ async def test_refresh_rejects_revoked_token(
             "/api/v1/auth/login",
             data={"username": "user@example.com", "password": "Password1"},
         )
-        refresh_token = login_response.json()["refresh_token"]
+        refresh_token = login_response.cookies.get(auth_router.settings.REFRESH_COOKIE_NAME)
+        assert refresh_token
 
         # Act: revoke and then attempt to refresh.
         await refresh_token_store.revoke(refresh_token)
-        refresh_response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
-        )
+        refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: revoked refresh tokens are rejected.
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -541,11 +555,14 @@ async def test_refresh_rejects_subject_mismatch(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        # Act: refresh with a token whose stored subject does not match.
-        refresh_response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": refresh_token},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            refresh_token,
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        # Act: refresh with a token whose stored subject does not match.
+        refresh_response = await client.post("/api/v1/auth/refresh")
 
     # Assert: subject mismatches are rejected.
     assert refresh_response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -772,11 +789,14 @@ async def test_refresh_rejects_invalid_token(app: FastAPI) -> None:
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        # Act: refresh with an invalid token.
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": "not-a-token"},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            "not-a-token",
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        # Act: refresh with an invalid token.
+        response = await client.post("/api/v1/auth/refresh")
 
     # Assert: invalid token is rejected.
     assert response.status_code == status.HTTP_401_UNAUTHORIZED
@@ -793,11 +813,14 @@ async def test_refresh_rejects_missing_subject(
         transport=httpx.ASGITransport(app=app),
         base_url="http://test",
     ) as client:
-        # Act: refresh with a token missing subject.
-        response = await client.post(
-            "/api/v1/auth/refresh",
-            json={"refresh_token": "ignored"},
+        client.cookies.set(
+            auth_router.settings.REFRESH_COOKIE_NAME,
+            "ignored",
+            domain="test",
+            path=auth_router.settings.REFRESH_COOKIE_PATH,
         )
+        # Act: refresh with a token missing subject.
+        response = await client.post("/api/v1/auth/refresh")
 
     # Assert: missing subject is rejected.
     assert response.status_code == status.HTTP_401_UNAUTHORIZED

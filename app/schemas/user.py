@@ -52,19 +52,18 @@ class UserResponse(UserBase):
 
 
 class TokenResponse(BaseModel):
-    # Access/refresh token response payload.
+    # Access token response payload.
     access_token: str
-    refresh_token: str
     token_type: str = "bearer"
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class RefreshRequest(BaseModel):
-    # Payload for requesting a refreshed access token.
-    refresh_token: str
+    # Legacy request model kept for older non-browser clients.
+    refresh_token: str | None = None
 
 
 class LogoutRequest(BaseModel):
-    # Payload for revoking a refresh token during logout.
-    refresh_token: str
+    # Legacy request model kept for older non-browser clients.
+    refresh_token: str | None = None
