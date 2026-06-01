@@ -9,6 +9,7 @@ services:
     env_file:
       - .env
     environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-bookshop}:${POSTGRES_PASSWORD:-bookshop}@db:5432/${POSTGRES_DB:-bookshop}
       REDIS_URL: redis://redis-inventory:6379
       RATE_LIMIT_STORAGE_URI: redis://redis-rate-limiter:6379
       REFRESH_TOKEN_REDIS_URL: redis://:${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}@redis-refresh:6379/0
