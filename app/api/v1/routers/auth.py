@@ -112,6 +112,7 @@ def _hash_refresh_token(refresh_token: str) -> str:
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+@limiter.limit("3/minute")
 async def register_user(
     request: Request,
     background_tasks: BackgroundTasks,

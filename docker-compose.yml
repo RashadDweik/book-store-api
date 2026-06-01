@@ -6,14 +6,15 @@ services:
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
     volumes:
       - ./app:/app/app
-    ports:
-      - "8000:8000"
     env_file:
       - .env
     environment:
       REDIS_URL: redis://redis-inventory:6379
       RATE_LIMIT_STORAGE_URI: redis://redis-rate-limiter:6379
       REFRESH_TOKEN_REDIS_URL: redis://:${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}@redis-refresh:6379/0
+      REFRESH_COOKIE_SECURE: "true"
+      REFRESH_COOKIE_SAMESITE: strict
+      ALLOWED_ORIGINS: '["https://${DOMAIN}"]'
     depends_on:
       - db
       - redis-inventory
@@ -32,7 +33,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bookshop}
       POSTGRES_DB: ${POSTGRES_DB:-bookshop}
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - bookshop_db:/var/lib/postgresql/data
     healthcheck:
@@ -44,7 +45,7 @@ services:
   redis-inventory:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -54,7 +55,7 @@ services:
   redis-rate-limiter:
     image: redis:7-alpine
     ports:
-      - "6380:6379"
+      - "127.0.0.1:6380:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -75,6 +76,25 @@ services:
       timeout: 3s
       retries: 5
 
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    profiles:
+      - prod
+    depends_on:
+      - api
+    env_file:
+      - .env
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
 volumes:
   bookshop_db:
   redis_refresh_data:
+  caddy_data:
+  caddy_config:
