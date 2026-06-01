@@ -4,6 +4,8 @@ services:
       context: .
       dockerfile: Dockerfile
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
     volumes:
       - ./app:/app/app
     env_file:
@@ -13,9 +15,8 @@ services:
       REDIS_URL: redis://redis-inventory:6379
       RATE_LIMIT_STORAGE_URI: redis://redis-rate-limiter:6379
       REFRESH_TOKEN_REDIS_URL: redis://:${REDIS_REFRESH_PASSWORD:-dev-refresh-pass}@redis-refresh:6379/0
-      REFRESH_COOKIE_SECURE: "true"
-      REFRESH_COOKIE_SAMESITE: strict
-      ALLOWED_ORIGINS: '["https://${DOMAIN}"]'
+      REFRESH_COOKIE_SECURE: "false"
+      REFRESH_COOKIE_SAMESITE: lax
     depends_on:
       - db
       - redis-inventory
@@ -77,25 +78,6 @@ services:
       timeout: 3s
       retries: 5
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    profiles:
-      - prod
-    depends_on:
-      - api
-    env_file:
-      - .env
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-
 volumes:
   bookshop_db:
   redis_refresh_data:
-  caddy_data:
-  caddy_config:
