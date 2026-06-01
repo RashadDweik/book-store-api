@@ -1,0 +1,8 @@
+services:
+  api:
+    ports:
+      - "8000:8000"
+    environment:
+      REFRESH_COOKIE_SECURE: "false"
+      REFRESH_COOKIE_SAMESITE: lax
+      ALLOWED_ORIGINS: '["http://localhost:8080"]'

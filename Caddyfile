@@ -1,0 +1,11 @@
+{
+	email {$CADDY_EMAIL}
+}
+
+{$DOMAIN} {
+	reverse_proxy api:8000
+}
+
+http://{$DOMAIN} {
+	redir https://{host}{uri} permanent
+}
