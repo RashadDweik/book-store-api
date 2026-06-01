@@ -21,4 +21,5 @@ dependencies = [
     "httpx",
     "pytest",
     "pytest-asyncio",
+    "python-multipart"
 ]
