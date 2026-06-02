@@ -6,6 +6,10 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app
 
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY pyproject.toml ./
 
 RUN pip install --no-cache-dir --upgrade pip \
@@ -23,5 +27,10 @@ if for_dep:
 PY
 
 COPY app ./app
+COPY alembic ./alembic
+COPY alembic.ini ./alembic.ini
+COPY scripts ./scripts
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+RUN chmod +x /app/scripts/docker-start.sh
+
+CMD ["/app/scripts/docker-start.sh"]
