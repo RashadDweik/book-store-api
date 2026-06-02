@@ -33,15 +33,19 @@ async def test_create_persists_cart() -> None:
     db = AsyncMock(spec=AsyncSession)
     db.add = Mock()
     db.flush = AsyncMock()
+    user_id = uuid4()
+    cart = Cart(user_id=user_id)
     result = Mock()
-    result.scalar_one.return_value = Cart(user_id=uuid4())
+    result.scalar_one.return_value = cart
     db.execute = AsyncMock(return_value=result)
     repo = CartRepository(db)
 
-    created = await repo.create(uuid4())
+    created = await repo.create(user_id)
 
     assert isinstance(created, Cart)
-    db.add.assert_called_once_with(created)
+    added_cart = db.add.call_args.args[0]
+    assert isinstance(added_cart, Cart)
+    assert added_cart.user_id == user_id
     db.flush.assert_awaited_once()
     db.execute.assert_awaited_once()
 
