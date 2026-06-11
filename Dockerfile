@@ -31,6 +31,7 @@ COPY alembic ./alembic
 COPY alembic.ini ./alembic.ini
 COPY scripts ./scripts
 
+RUN sed -i 's/\r$//' /app/scripts/docker-start.sh
 RUN chmod +x /app/scripts/docker-start.sh
 
 CMD ["/app/scripts/docker-start.sh"]
