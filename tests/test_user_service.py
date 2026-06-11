@@ -63,7 +63,7 @@ async def test_register_rejects_duplicate_email() -> None:
     with pytest.raises(HTTPException) as exc:
         await service.register(data)
 
-    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.status_code == status.HTTP_409_CONFLICT
 
 
 async def test_register_maps_email_unique_integrity_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -90,7 +90,7 @@ async def test_register_maps_email_unique_integrity_error(monkeypatch: pytest.Mo
     with pytest.raises(HTTPException) as exc:
         await service.register(data)
 
-    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.status_code == status.HTTP_409_CONFLICT
     assert exc.value.detail == "Email already registered."
 
 
@@ -259,5 +259,5 @@ async def test_update_profile_maps_email_unique_integrity_error() -> None:
     with pytest.raises(HTTPException) as exc:
         await service.update_profile(user.id, UserUpdate(email="taken@example.com"))
 
-    assert exc.value.status_code == status.HTTP_400_BAD_REQUEST
+    assert exc.value.status_code == status.HTTP_409_CONFLICT
     assert exc.value.detail == "Email already registered."

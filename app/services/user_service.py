@@ -47,7 +47,7 @@ class UserService:
         existing = await self._repo.get_by_email(data.email)
         if existing:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=status.HTTP_409_CONFLICT,
                 detail="Email already registered.",
             )
 
@@ -68,7 +68,7 @@ class UserService:
         except IntegrityError as exc:
             if self._is_email_unique_violation(exc):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=status.HTTP_409_CONFLICT,
                     detail="Email already registered.",
                 ) from exc
             raise
@@ -122,7 +122,7 @@ class UserService:
         except IntegrityError as exc:
             if self._is_email_unique_violation(exc):
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=status.HTTP_409_CONFLICT,
                     detail="Email already registered.",
                 ) from exc
             raise
