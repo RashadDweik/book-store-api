@@ -4,10 +4,10 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import selectinload, joinedload
 
 from app.models.wishlist import Wishlist, WishlistItem
-
+from app.models.book import Book # Ensure you import your Book model
 
 class WishlistRepository:
     def __init__(self, db: AsyncSession) -> None:
@@ -15,10 +15,14 @@ class WishlistRepository:
         self._db = db
 
     def _base_select(self):
-        return select(Wishlist).options(selectinload(Wishlist.items))
+        # We use selectinload to get items, and joinedload to fetch 
+        # the specific 'book' relation for each item in one go.
+        return select(Wishlist).options(
+            selectinload(Wishlist.items).joinedload(WishlistItem.book)
+        )
 
     async def get_by_user_id(self, user_id: UUID) -> Wishlist | None:
-        # Retrieve a wishlist by user id, returning None when missing.
+        # Retrieve a wishlist by user id with fully loaded items and books.
         result = await self._db.execute(self._base_select().where(Wishlist.user_id == user_id))
         return result.scalar_one_or_none()
 
@@ -32,8 +36,11 @@ class WishlistRepository:
 
     async def get_item_by_id(self, wishlist_id: UUID, item_id: UUID) -> WishlistItem | None:
         # Retrieve a wishlist item by id within the given wishlist.
+        # Note: If you need the book here too, add .options(joinedload(WishlistItem.book))
         result = await self._db.execute(
-            select(WishlistItem).where(
+            select(WishlistItem)
+            .options(joinedload(WishlistItem.book))
+            .where(
                 WishlistItem.wishlist_id == wishlist_id,
                 WishlistItem.id == item_id,
             )
@@ -43,7 +50,9 @@ class WishlistRepository:
     async def get_item_by_book(self, wishlist_id: UUID, book_id: UUID) -> WishlistItem | None:
         # Retrieve a wishlist item for the given book within the given wishlist.
         result = await self._db.execute(
-            select(WishlistItem).where(
+            select(WishlistItem)
+            .options(joinedload(WishlistItem.book))
+            .where(
                 WishlistItem.wishlist_id == wishlist_id,
                 WishlistItem.book_id == book_id,
             )
