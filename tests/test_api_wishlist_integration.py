@@ -42,11 +42,30 @@ class StubWishlistService:
 
 
 def build_wishlist(**overrides) -> SimpleNamespace:
+    book_id = uuid4()
+    
+    # 1. Mock the nested Book object required by WishlistItemRead schema
+    mock_book = SimpleNamespace(
+        id=book_id,
+        title="Test Book Title",
+        price="19.99",
+        release_date="2026-01-01",
+        category_id=uuid4(),
+        description="A book description",
+        isbn="978-3-16-148410-0",
+        stock=10,
+        created_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        cover_url="http://test.com/cover.jpg",
+    )
+    
+    # 2. Attach the mock book object to the item
     item = SimpleNamespace(
         id=uuid4(),
-        book_id=uuid4(),
+        book_id=book_id,
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        book=mock_book, 
     )
+    
     payload = {
         "id": uuid4(),
         "user_id": uuid4(),
@@ -90,6 +109,8 @@ async def test_read_wishlist_returns_wishlist(app: FastAPI) -> None:
     body = response.json()
     assert body["id"] == str(wishlist.id)
     assert body["items"][0]["id"] == str(wishlist.items[0].id)
+    # Verify the book relation serializes flawlessly
+    assert body["items"][0]["book"]["id"] == str(wishlist.items[0].book.id)
 
 
 async def test_add_wishlist_item_returns_wishlist(app: FastAPI) -> None:

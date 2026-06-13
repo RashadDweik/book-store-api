@@ -15,11 +15,14 @@ class WishlistRepository:
         self._db = db
 
     def _base_select(self):
-        # We use selectinload to get items, and joinedload to fetch 
-        # the specific 'book' relation for each item in one go.
         return select(Wishlist).options(
-            selectinload(Wishlist.items).joinedload(WishlistItem.book)
-        )
+            selectinload(Wishlist.items).options(
+                joinedload(WishlistItem.book).options(
+                    selectinload(Book.authors),
+                    joinedload(Book.category),
+                )
+            )
+    )
 
     async def get_by_user_id(self, user_id: UUID) -> Wishlist | None:
         # Retrieve a wishlist by user id with fully loaded items and books.
@@ -27,12 +30,15 @@ class WishlistRepository:
         return result.scalar_one_or_none()
 
     async def create(self, user_id: UUID) -> Wishlist:
-        # Persist a new wishlist for the given user.
         wishlist = Wishlist(user_id=user_id)
         self._db.add(wishlist)
         await self._db.flush()
-        await self._db.refresh(wishlist)
-        return wishlist
+        # Re-fetch with relationships eagerly loaded
+        result = await self._db.execute(
+            self._base_select().where(Wishlist.user_id == user_id)
+        )
+        return result.scalar_one()
+
 
     async def get_item_by_id(self, wishlist_id: UUID, item_id: UUID) -> WishlistItem | None:
         # Retrieve a wishlist item by id within the given wishlist.

@@ -29,18 +29,23 @@ async def test_get_by_user_id_returns_wishlist() -> None:
 
 
 async def test_create_persists_wishlist() -> None:
+    user_id = uuid4()
+    wishlist = Wishlist(user_id=user_id)
+    result = Mock()
+    result.scalar_one.return_value = wishlist
     db = AsyncMock(spec=AsyncSession)
     db.add = Mock()
     db.flush = AsyncMock()
-    db.refresh = AsyncMock()
+    db.execute = AsyncMock(return_value=result)
     repo = WishlistRepository(db)
 
-    created = await repo.create(uuid4())
+    created = await repo.create(user_id)
 
     assert isinstance(created, Wishlist)
-    db.add.assert_called_once_with(created)
+    db.add.assert_called_once()
     db.flush.assert_awaited_once()
-    db.refresh.assert_awaited_once_with(created)
+    db.execute.assert_awaited_once()
+    result.scalar_one.assert_called_once()
 
 
 async def test_add_item_persists_wishlist_item() -> None:

@@ -4,6 +4,7 @@ from uuid import UUID
 from pydantic import Field
 
 from .base import SchemaBase
+from .book import BookRead
 
 
 class WishlistItemCreate(SchemaBase):
@@ -12,8 +13,8 @@ class WishlistItemCreate(SchemaBase):
 
 class WishlistItemRead(SchemaBase):
     id: UUID
-    book_id: UUID
     created_at: datetime
+    book: BookRead
 
 
 class WishlistRead(SchemaBase):
