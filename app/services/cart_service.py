@@ -22,12 +22,6 @@ class CartService:
             cart = await self._repo.create(user_id)
         return cart
 
-    async def _get_cart(self, user_id: UUID) -> Cart:
-        cart = await self._repo.get_by_user_id(user_id)
-        if cart is None:
-            cart = await self._repo.create(user_id)
-        return cart
-
     @staticmethod
     def _validate_quantity(quantity: int) -> None:
         if quantity < 1:

@@ -1,6 +1,6 @@
 from datetime import datetime
 from uuid import UUID
-
+from app.schemas.book import BookRead
 from .base import SchemaBase
 
 
@@ -17,8 +17,11 @@ class CartItemUpdate(SchemaBase):
     quantity: int | None = None
 
 
-class CartItemRead(CartItemBase):
+class CartItemRead(SchemaBase):
     id: UUID
+    quantity: int
+    created_at: datetime
+    book: BookRead
 
 
 class CartRead(SchemaBase):
