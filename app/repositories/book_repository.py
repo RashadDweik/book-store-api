@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -40,39 +41,48 @@ class BookRepository:
         category_id: UUID | None = None,
         min_price: Decimal | None = None,
         max_price: Decimal | None = None,
-        min_release_date: "date" | None = None,
-        max_release_date: "date" | None = None,
+        min_release_date: date | None = None,
+        max_release_date: date | None = None,
         in_stock: bool | None = None,
         limit: int = 20,
         offset: int = 0,
         order_by=None,
-    ) -> list[Book]:
-        # List books with optional filters and pagination.
-        stmt = self._base_select()
-        if query:
-            pattern = f"%{query}%"
-            stmt = stmt.where(or_(Book.title.ilike(pattern), Book.isbn.ilike(pattern)))
-        if author_id is not None:
-            stmt = stmt.where(Book.authors.any(Author.id == author_id))
-        if category_id is not None:
-            stmt = stmt.where(Book.category_id == category_id)
-        if min_price is not None:
-            stmt = stmt.where(Book.price >= min_price)
-        if max_price is not None:
-            stmt = stmt.where(Book.price <= max_price)
-        if min_release_date is not None:
-            stmt = stmt.where(Book.release_date >= min_release_date)
-        if max_release_date is not None:
-            stmt = stmt.where(Book.release_date <= max_release_date)
-        if in_stock is True:
-            stmt = stmt.where(Book.stock > 0)
-        elif in_stock is False:
-            stmt = stmt.where(Book.stock <= 0)
+    ) -> tuple[list[Book], int]:
+        # Filter builder helper
+        def apply_filters(stmt):
+            if query:
+                pattern = f"%{query}%"
+                stmt = stmt.where(or_(Book.title.ilike(pattern), Book.isbn.ilike(pattern)))
+            if author_id is not None:
+                stmt = stmt.where(Book.authors.any(Author.id == author_id))
+            if category_id is not None:
+                stmt = stmt.where(Book.category_id == category_id)
+            if min_price is not None:
+                stmt = stmt.where(Book.price >= min_price)
+            if max_price is not None:
+                stmt = stmt.where(Book.price <= max_price)
+            if min_release_date is not None:
+                stmt = stmt.where(Book.release_date >= min_release_date)
+            if max_release_date is not None:
+                stmt = stmt.where(Book.release_date <= max_release_date)
+            if in_stock is True:
+                stmt = stmt.where(Book.stock > 0)
+            elif in_stock is False:
+                stmt = stmt.where(Book.stock <= 0)
+            return stmt
+
+        # Execute count query
+        count_stmt = apply_filters(select(func.count(Book.id)))
+        total_count = (await self._db.execute(count_stmt)).scalar() or 0
+
+        # Execute data query
+        stmt = apply_filters(self._base_select())
         if order_by is not None:
             stmt = stmt.order_by(order_by)
         stmt = stmt.limit(limit).offset(offset)
-        result = await self._db.execute(stmt)
-        return result.scalars().all()
+        
+        books = (await self._db.execute(stmt)).scalars().all()
+        return list(books), total_count
 
     async def create(self, book_data: dict, authors: list[Author]) -> Book:
         # Persist a new book with authors.

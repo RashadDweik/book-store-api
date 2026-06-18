@@ -5,7 +5,7 @@ from decimal import Decimal
 from datetime import date
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Request, status
+from fastapi import APIRouter, Depends, Query, Request , Response, status
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,36 +84,31 @@ async def _delete_book_stock(request: Request, book_id: UUID) -> None:
 @router.get("", response_model=list[BookRead])
 async def list_books(
     request: Request,
+    response: Response,
     q: str | None = Query(None, min_length=1, max_length=200),
     author_id: UUID | None = Query(None),
     category_id: UUID | None = Query(None),
     min_price: Decimal | None = Query(None, ge=0),
     max_price: Decimal | None = Query(None, ge=0),
-    min_release_date: date | None = Query(None, description="Earliest release date to include"),
-    max_release_date: date | None = Query(None, description="Latest release date to include"),
+    min_release_date: date | None = Query(None),
+    max_release_date: date | None = Query(None),
     in_stock: bool | None = Query(None),
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    sort: str | None = Query(
-        None,
-        description="Sort by title, price, or created_at. Use -field for descending.",
-    ),
+    sort: str | None = Query(None),
     service: BookService = Depends(get_book_service),
 ) -> list[BookRead]:
-    # Return a filtered list of books.
-    books = await service.list_books(
-        query=q,
-        author_id=author_id,
-        category_id=category_id,
-        min_price=min_price,
-        max_price=max_price,
-        min_release_date=min_release_date,
-        max_release_date=max_release_date,
-        in_stock=in_stock,
-        limit=limit,
-        offset=offset,
-        sort=sort,
+    # Destructure the result; count is now always returned
+    books, total_count = await service.list_books(
+        query=q, author_id=author_id, category_id=category_id,
+        min_price=min_price, max_price=max_price,
+        min_release_date=min_release_date, max_release_date=max_release_date,
+        in_stock=in_stock, limit=limit, offset=offset, sort=sort
     )
+    
+    # Set the mandatory header
+    response.headers["X-Total-Count"] = str(total_count)
+
     await _hydrate_book_stock(request, books)
     return books
 
