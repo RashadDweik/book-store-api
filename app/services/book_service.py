@@ -114,7 +114,7 @@ class BookService:
                 detail="min_release_date cannot be greater than max_release_date.",
             )
 
-    async def list_books(
+    async def list_books (
         self,
         *,
         query: str | None = None,
@@ -128,7 +128,7 @@ class BookService:
         limit: int = 20,
         offset: int = 0,
         sort: str | None = None,
-    ) -> list[Book]:
+    ) -> tuple[list[Book] , int]:
         # Validate filters and return the paged book list.
         self._validate_price_range(min_price, max_price)
         self._validate_release_date_range(min_release_date, max_release_date)
