@@ -1,17 +1,19 @@
 from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
-from typing import List, Optional
 
 from .base import SchemaBase
 from .book import BookRead
+from typing import List
 
 
-class BookRead(SchemaBase):
-    id: UUID
-    title: str
-    price: Decimal
-    cover_url: Optional[str] = None
+class OrderItemCreate(SchemaBase):
+    book_id: UUID
+    quantity: int = 1
+
+
+class OrderCreate(SchemaBase):
+    items: list[OrderItemCreate]
 
 
 class OrderItemRead(SchemaBase):
@@ -29,3 +31,4 @@ class OrderRead(SchemaBase):
     total_amount: Decimal
     created_at: datetime
     items: List[OrderItemRead] = []
+
