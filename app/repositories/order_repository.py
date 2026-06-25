@@ -5,8 +5,9 @@ from uuid import UUID
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import joinedload, selectinload , joinedload
 
+from app.models.book import Book
 from app.models.order import Order, OrderItem
 
 
@@ -17,8 +18,12 @@ class OrderRepository:
 
     def _base_select(self):
         return select(Order).options(
-            selectinload(Order.items).selectinload(OrderItem.book),
-            selectinload(Order.user),
+            selectinload(Order.items).options(
+                joinedload(OrderItem.book).options(
+                    selectinload(Book.authors),
+                    joinedload(Book.category)
+                )
+            )
         )
 
     async def get_by_id(self, order_id: UUID) -> Order | None:
