@@ -32,21 +32,30 @@ async def test_get_by_id_returns_book() -> None:
 
 
 async def test_list_returns_books() -> None:
-    book = Book(title="Test", price=Decimal("10.00"), release_date=date(2024, 1, 15), stock=5)
-    result = Mock()
-    scalars = Mock()
-    scalars.all.return_value = [book]
-    result.scalars.return_value = scalars
+    book = Book(id=uuid4(), title="Test", price=Decimal("10.00"), release_date=date(2024, 1, 15), stock=5)
+    
+    # 1. Mock for the COUNT result
+    count_result = Mock()
+    count_result.scalar.return_value = 1  # The count query returns 1
+    
+    # 2. Mock for the DATA result
+    data_result = Mock()
+    data_result.scalars.return_value.all.return_value = [book]
+    
     db = AsyncMock(spec=AsyncSession)
-    db.execute = AsyncMock(return_value=result)
+    # 3. Use side_effect to return mocks in order
+    db.execute.side_effect = [count_result, data_result]
+    
     repo = BookRepository(db)
 
-    books = await repo.list(limit=10, offset=0)
-
+    (books, count) = await repo.list(limit=10, offset=0)
+    
+    # Now count will be 1 (an int), not a Mock object
     assert books == [book]
-    db.execute.assert_awaited_once()
-    stmt = db.execute.call_args.args[0]
-    assert isinstance(stmt, Select)
+    assert count == 1
+    
+    # Verify the database was called twice
+    assert db.execute.call_count == 2
 
 
 async def test_create_persists_book() -> None:
