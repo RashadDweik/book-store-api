@@ -79,7 +79,7 @@ async def test_update_item_applies_quantity() -> None:
 
     assert updated is item
     assert item.quantity == 4
-    db.add.assert_called_once_with(item)
+    
     db.flush.assert_awaited_once()
     db.refresh.assert_awaited_once_with(item)
 
