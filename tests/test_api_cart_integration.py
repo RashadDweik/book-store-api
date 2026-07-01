@@ -2,6 +2,7 @@ import os
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
+from pydantic.types import Decimal
 
 import httpx
 import pytest
@@ -16,6 +17,15 @@ from app.main import create_app
 
 
 pytestmark = pytest.mark.anyio
+
+
+def build_book_nested():
+    return SimpleNamespace(
+        id=str(uuid4()), 
+        title="The Great Gatsby",
+        price=Decimal("19.99"),  # Pydantic expects Decimal or float
+        created_at=datetime(2024, 1, 1, tzinfo=timezone.utc).isoformat()
+    )
 
 
 class StubCartService:
@@ -45,12 +55,17 @@ class StubCartService:
 
 
 def build_cart(**overrides) -> SimpleNamespace:
+    
+    book=build_book_nested()
+
     item = SimpleNamespace(
         id=uuid4(),
         book_id=uuid4(),
         quantity=2,
         created_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+        book=book
     )
+
     payload = {
         "id": uuid4(),
         "user_id": uuid4(),
@@ -88,9 +103,21 @@ async def test_read_cart_returns_cart(app: FastAPI) -> None:
 
     assert response.status_code == 200
     body = response.json()
+    
+    # Assertions
     assert body["id"] == str(cart.id)
     assert body["items"][0]["id"] == str(cart.items[0].id)
+    assert body["items"][0]["book"]["title"] == "The Great Gatsby"
 
+    # Check the actual value (19.99), and verify if it arrives as a float or string
+    # Usually, it's safer to compare as a float or str to be safe against rounding
+    assert float(body["items"][0]["book"]["price"]) == 19.99 
+
+    api_date = body["items"][0]["book"]["created_at"].replace("Z", "+00:00")
+    stub_date = cart.items[0].book.created_at.replace("Z", "+00:00")
+    
+    assert api_date == stub_date
+   
 
 async def test_add_cart_item_returns_cart(app: FastAPI) -> None:
     cart = build_cart()
