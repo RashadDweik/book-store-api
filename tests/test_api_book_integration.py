@@ -41,10 +41,10 @@ class StubBookService:
         self._update_error = update_error
         self._delete_error = delete_error
 
-    async def list_books(self, **_kwargs) -> list[SimpleNamespace]:
+    async def list_books(self, **_kwargs) -> tuple[list[SimpleNamespace] , int]:
         if self._list_error:
             raise self._list_error
-        return self._books
+        return self._books , len(self._books)
 
     async def get_book(self, _book_id) -> SimpleNamespace:
         if self._get_error:
@@ -112,6 +112,9 @@ async def test_list_books_returns_books(app: FastAPI) -> None:
         response = await client.get("/api/v1/books")
 
     assert response.status_code == 200
+
+    assert response.headers['X-Total-Count'] == "1"
+
     body = response.json()
     assert body[0]["id"] == str(book.id)
     assert body[0]["title"] == book.title
